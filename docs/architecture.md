@@ -73,6 +73,18 @@ FPS>20 且同一 track 不含 `postFramebuffer%` 的条目进入主要渲染线�
 
 所有匹配的 SurfaceView counter 都会参与，与 EGL 统计并列输出，不依据主要渲染线程过滤或自动回退。如果 counter 表示队列深度，其正向变化不能直接等同于 queueBuffer 调用数或显示帧数，需核实设备埋点定义。它与 EGL 结果不能相加。
 
+## FrameTimeline 与呈现指标
+
+EGL、queueBuffer 和 BufferTX 属于调用或队列相关埋点，新系统也可能继续提供。FrameTimeline 是 Android 12 起提供的另一类系统数据源，通过 `android.surfaceflinger.frametimeline` 采集预期与实际帧时间，并提供 token、layer 和呈现／jank 分类。[官方 FrameTimeline 定义](https://perfetto.dev/docs/data-sources/frametimeline)
+
+| 数据 | 用途 | 与提交节奏的区别 |
+|---|---|---|
+| `expected_frame_timeline_slice` | 帧的预期时间范围 | 定义预期完成时间，不表示某次 EGL 调用 |
+| `actual_frame_timeline_slice` | 实际帧时间及 `present_type`、`jank_type` 等信息 | 可区分丢弃、迟到等结果；应用侧的 slice 结束也不能一概当作屏幕呈现时刻 |
+| layer、surface/display frame token | 区分 surface 并建立帧间关联 | 一个进程可更新多个 layer，多个 surface 帧可合成为一个 display 帧 |
+
+本工具的 FPS Summary 采用提交标记口径，尚未查询上述 FrameTimeline 表。显示 FPS、应用提交 FPS 和 jank 比例属于不同指标：引入 FrameTimeline 汇总时，应明确选定的进程／layer、app 或 display 帧、统计窗口、丢弃帧处理和去重规则，不能把多个 surface 的帧数直接相加。采集缺失或渲染路径不受支持时，应报告指标不可用。
+
 ## 调度、GPU 与 CPU 指标
 
 | 指标 | 计算口径与含义 |
@@ -95,3 +107,15 @@ FPS>20 且同一 track 不含 `postFramebuffer%` 的条目进入主要渲染线�
 - 窗口函数以 ts 排序，相同时间戳缺少额外排序键；同名 VSYNC track 会合并。
 - CPU 展示假定八核；频率仅选择 CPU 0/4/7，且末次采样之后的区间不计入驻留时间。
 - 所有指标分析整个输入文件，没有用户指定时间窗口。
+
+## 改进边界
+
+| 问题 | 可行的改进方式 |
+|---|---|
+| 依赖 sched 估计全局时间 | 使用 Trace Processor 的 `trace_bounds`，让没有调度数据的 trace 仍能分析已有标记 |
+| CPU 频率末尾区间缺失 | 每条 counter track 独立排序，将最后一个已知值延续到 trace 结束；首个样本前的未知频率不回填 |
+| CPU 数量写死 | 按 trace 中的 CPU ID 输出列与频率，能力模型无法覆盖时显示不可计算 |
+| 同时间戳与跨 track 混合 | 用 `(ts, id)` 建立确定顺序，并按 track 分区；这不会恢复采集时已经丢失的真实先后关系 |
+| EGL 与 SurfaceView 关联 | 需要稳定的 layer/buffer/frame 身份；只有时间接近或进程名相同不足以认定为同一帧 |
+| 显示 FPS 与 jank | 单独定义基于 FrameTimeline 的指标及有效数据条件，不替换现有提交节奏的标签 |
+| 缺失埋点或 trace 丢包 | 分析器可以提示数据不足，不能重建未采集的事件 |
