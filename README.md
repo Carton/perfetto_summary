@@ -52,6 +52,8 @@ uv run poe check-full
 uv run poe build
 ```
 
+Tests include a synthetic trace parsed by the official Trace Processor. Its first use can download the pinned prebuilt; later runs use the cache.
+
 | Task | Purpose |
 |---|---|
 | `lint` / `lint-fix` | Ruff checks / automatic fixes |

@@ -24,7 +24,7 @@ CLI 参数与 trace 文件
 
 ## 时间与身份基准
 
-内部时间单位为 ns；输出转换为 ms 或 s。全局观察时长取最早与最晚 `sched_slice` 的跨度，末条未结束的调度 slice 按零长度处理；没有调度事件的输入无法通过基础信息检查。
+内部时间单位为 ns；输出转换为 ms 或 s。全局起止时间使用 Trace Processor 的 `trace_start()`、`trace_end()`，全局观察时长为两者之差；仅拒绝没有正时长边界的输入。没有 sched 的 trace 仍可分析其已有的 slice 和 counter，调度相关章节则没有数据。
 
 进程和线程分别通过 Perfetto 的 `upid`、`utid` 标识，用户可见的 PID/TID 仅用于展示。FPS 摘要按线程 track 分组；SurfaceView 统计按 counter track 分组。
 
@@ -43,7 +43,7 @@ CLI 参数与 trace 文件
 
 ### 提交节奏摘要
 
-查询 `slice`，经 `thread_track`、`thread` 和 `process` 关联上下文，按 track 聚合。设匹配标记数为 N，首尾开始时间跨度为 T 秒：
+查询 `slice`，经 `thread_track`、`thread` 和 `process` 关联上下文，按 track 聚合。同一 track 内的 EGL 调用若有同类 EGL 祖先，则作为外层调用的 wrapper 排除；祖先检查可跨越中间的其他名称。该规则形成最外层 EGL 调用口径，不依据时间重合合并独立调用。设匹配标记数为 N，首尾开始时间跨度为 T 秒：
 
 ```text
 FPS = (N − 1) / T
@@ -53,11 +53,11 @@ N≤1 或 T≤0 时输出 0，表示无法形成有效频率估计。`Total Fram
 
 FPS>20 且同一 track 不含 `postFramebuffer%` 的条目进入主要渲染线程详情。20 是详情筛选阈值。所有匹配线程均进入调度摘要。
 
-同一 track 的两个 EGL 名称合并计数，未按 surface、buffer 或 frame token 去重；嵌套标记、多 surface 共用线程都可能影响其与真实帧数的对应关系。
+两个 EGL 名称归入同一提交标记系列。嵌套 wrapper 只计最外层调用，但未按 surface、buffer 或 frame token 关联；同一线程更新多个 surface 时仍不能直接推算单个 surface 的帧率。
 
 ### 渲染线程间隔
 
-按 utid 查询 EGL 标记，以 `ts − LAG(ts)` 计算相邻起点间隔。第一个标记没有前驱，不计入直方图。区间采用顺序 CASE：0–4、4–9、9–12、12–16、16–18、超过 18 ms；相邻桶的公共边界归入前一桶。
+按 utid 查询 EGL 标记，每个 track 内按 `(ts, id)` 排序，以 `ts − LAG(ts)` 计算相邻起点间隔。每条 track 的第一个标记没有前驱，不计入直方图；不同 track 不互相作为前驱。区间采用顺序 CASE：0–4、4–9、9–12、12–16、16–18、超过 18 ms；相邻桶的公共边界归入前一桶。
 
 最长十个间隔用于定位较长停顿。输出时间戳对应间隔结束的标记，分析区间是该标记与其前一个标记之间。固定区间不按刷新率或 deadline 分类，不能据此直接认定 jank。
 
@@ -65,8 +65,8 @@ FPS>20 且同一 track 不含 `postFramebuffer%` 的条目进入主要渲染线�
 
 每条匹配 track 独立计算：
 
-1. 按 ts 计算 `value − LAG(value)`，保留差值大于零的事件；首个样本无前值，不参与判断。
-2. 对保留事件的时间戳计算相邻间隔，排除无前驱的第一个事件。
+1. 按 `(ts, id)` 计算 `value − LAG(value)`，保留差值大于零的事件；首个样本无前值，不参与判断。
+2. 对保留事件按 `(ts, id)` 计算相邻间隔，排除无前驱的第一个事件。
 3. 输出 `1e9 / AVG(interval_ns)`、有效间隔数量、直方图和最长十个间隔。
 
 `Count` 是间隔数。一次跳增大于 1 仍只算一个正向变化事件；下降、重置和持平不计。少于两个事件或平均间隔不大于零时输出 FPS=0。
@@ -90,32 +90,54 @@ EGL、queueBuffer 和 BufferTX 属于调用或队列相关埋点，新系统也�
 | 指标 | 计算口径与含义 |
 |---|---|
 | 调度摘要 | 按 upid/utid 汇总 Running、R/R+ 和指定 D/DK 的 io_wait；sched%=runnable/running，iow%=io_wait/running |
-| VSYNC 间隔 | 对同名 counter 的相邻采样求差，不按 value 是否变化过滤；可选直方图过滤不大于 2.5 ms 的间隔，均值不作同样过滤 |
+| VSYNC 间隔 | 对同名 counter 每条 track 分别按 `(ts, id)` 求相邻采样差，不按 value 是否变化过滤；可选直方图过滤不大于 2.5 ms 的间隔，均值不作同样过滤 |
 | FrameMissed / hasClientComposition | 对匹配 counter 的 value 直接求和；仅当埋点表示逐次事件值时才能解释为事件数量 |
 | GPU completion | 对 `waiting for GPU completion%` slice 的 dur 分桶，反映 CPU 侧等待时长 |
 | 进程/线程 CPU 时间 | 汇总 sched 的 dur；CPU Time% 以全局观察时长为分母，跨核并行时可超过 100% |
 | 进程 CPU N % | 指定 CPU 的运行时间 / 进程总运行时间 |
-| CPU 频率 | 查询 CPU 0/4/7 的 cpufreq counter，以相邻采样间隔加权；占比以全局观察时长为分母 |
+| CPU 频率 | 复用官方 `linux.cpu.frequency` 的 `cpu_frequency_counters`，按 CPU 与频点汇总正时长区间；占比以全局观察时长为分母 |
 | Capa % | 对 CPU 运行时间按选定 SoC 的 capacity × 参考最高频率加权，模型定义见 [CPU capacity 文档](cpu-capacity.md) |
 
 缺失调度样本时相关值为零，不能区分“没有运行”和“没有采集”。GPU 等待时长不等于完整 GPU 执行时长；累计 counter 或状态 counter 的求和也不等于丢帧次数。
 
+## 频率区间与 slice 重合
+
+频率区间采用官方 `linux.cpu.frequency` 模块，不自行补写 LEAD 算法。一个频点从采样时刻保持到下一次采样；末个已知频点保持到 `trace_end()`。首个采样之前的频率未知，不向前填充。同时间戳产生的零时长频点不参与驻留统计；重复的相同值区间汇总到同一频点。Count 表示参与汇总的正时长区间数量。
+
+```text
+某频点驻留时间 = Σ该频点的有效区间时长
+频点占比 = 驻留时间 / 全局观察时长
+```
+
+频率未覆盖完整 trace 时，各频点占比之和可以小于 100%。驻留时间表示频率状态，并不表示 CPU 一直在执行任务；评估工作量还需结合 sched 与 idle。实现依据见[官方频率模块](https://github.com/google/perfetto/blob/v57.2/src/trace_processor/perfetto_sql/stdlib/linux/cpu/frequency.sql)。
+
+slice 的重合应按指标处理：
+
+- 提交节奏：对同类 EGL 祖先关系去除 wrapper，不把执行 dur 相加或求并集。
+- GPU 等待直方图：保留每个等待 slice。两个进程并行等待各 5 ms，仍是两个 5 ms 样本，不合并成一个样本。
+- 并集占用时间与区间交集：属于另行定义的指标。只有需要“窗口内至少一个任务在执行多久”或“任务运行期间的频率”时，才使用区间并集或相交算法，不能用普通 dur 求和替代。
+
+CPU 时间列按 sched 中实际出现的 CPU ID 生成，频率统计覆盖所有有 cpufreq 数据的 CPU。静态 capacity 模型若不能覆盖观察到的 CPU ID，则输出 `N/A`；模型与设备是否匹配仍需人工核实。
+
 ## 数据边界
 
-- 全局时间依赖 sched；它不等于完整 trace 的 `trace_bounds`。
-- EGL 与 SurfaceView 数据未按 layer/frame 身份关联。
-- 窗口函数以 ts 排序，相同时间戳缺少额外排序键；同名 VSYNC track 会合并。
-- CPU 展示假定八核；频率仅选择 CPU 0/4/7，且末次采样之后的区间不计入驻留时间。
-- 所有指标分析整个输入文件，没有用户指定时间窗口。
+- 同一进程多 surface 的标记仍需 layer/frame 身份才能关联，时间接近并不能证明是同一帧。
+- `(ts, id)` 使排序可重复，但不能恢复采集时丢失的真实事件先后关系。
+- 分析整个输入文件，没有用户指定时间窗口；也不自动识别 SoC capacity 模型。
+- 指标有效性依赖采集完整性。缺少频率初始值、帧 token 或 sched 时不能重建未知部分。
 
-## 改进边界
+## 数据与指标扩展条件
 
-| 问题 | 可行的改进方式 |
+| 指标 | 所需条件 |
 |---|---|
-| 依赖 sched 估计全局时间 | 使用 Trace Processor 的 `trace_bounds`，让没有调度数据的 trace 仍能分析已有标记 |
-| CPU 频率末尾区间缺失 | 每条 counter track 独立排序，将最后一个已知值延续到 trace 结束；首个样本前的未知频率不回填 |
-| CPU 数量写死 | 按 trace 中的 CPU ID 输出列与频率，能力模型无法覆盖时显示不可计算 |
-| 同时间戳与跨 track 混合 | 用 `(ts, id)` 建立确定顺序，并按 track 分区；这不会恢复采集时已经丢失的真实先后关系 |
-| EGL 与 SurfaceView 关联 | 需要稳定的 layer/buffer/frame 身份；只有时间接近或进程名相同不足以认定为同一帧 |
-| 显示 FPS 与 jank | 单独定义基于 FrameTimeline 的指标及有效数据条件，不替换现有提交节奏的标签 |
-| 缺失埋点或 trace 丢包 | 分析器可以提示数据不足，不能重建未采集的事件 |
+| EGL 与 SurfaceView 关联 | 稳定的 layer/buffer/frame 身份；只有时间接近或进程名相同不足以认定为同一帧 |
+| 显示 FPS 与 jank | FrameTimeline 数据，以及明确的 layer、时间窗口、去重和丢弃帧规则 |
+| 采集完整性判断 | 利用丢包或解析诊断提示数据不足；不能重建未采集的事件 |
+
+## 验证策略
+
+SQL 单元测试覆盖 `(N−1)/T`、零跨度、嵌套 EGL、跨 track 间隔、同时间戳 counter、VSYNC 分区和 CPU ID 超出模型范围。
+
+`tests/fixtures/metrics.systrace` 是人工构造的公开样例，不含设备或应用私有数据。集成测试用官方 Trace Processor 解析它，检查无 sched 的时间边界、末尾频点、单样本、重复频率、相同时间戳及并行 GPU 等待。
+
+真实 trace 回归采用同一版本的官方客户端和二进制分别运行基线与当前代码。FPS、FrameMissed、GPU 样本和进程 CPU 运行时间应在口径不变时一致；全局时间与驻留区间的预期变化分别使用原始 trace 边界与 counter 做独立核算。测试执行流程与依赖见 README。

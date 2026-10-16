@@ -82,6 +82,8 @@ uv run poe check-full
 uv run poe build
 ```
 
+测试包含由官方 Trace Processor 解析的合成 trace；首次使用可能需要下载清单指定的程序，后续复用缓存。
+
 | 任务 | 用途 |
 |---|---|
 | `lint` / `lint-fix` | Ruff 检查 / 自动修复 |

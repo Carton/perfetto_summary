@@ -101,7 +101,12 @@ class SchedTime:
 
 class ProcCpuTime:
     def __init__(
-        self, pid: int, upid: int, cpu_ms: float, cnt: int, cpu_ms_per_cpu: list[float]
+        self,
+        pid: int,
+        upid: int,
+        cpu_ms: float,
+        cnt: int,
+        cpu_ms_per_cpu: dict[int, float],
     ) -> None:
         self.pid = pid
         self.upid = upid
@@ -165,10 +170,32 @@ class PerfettoParser:
         """Do statistics of fps related info.
         Returns list of `ThreadInfo' classes"""
 
+        # A nested EGL wrapper is part of its outer submission, not a second frame.
+        self._tp.query("DROP VIEW IF EXISTS frame_slices")
+        self._tp.query("""
+            CREATE TEMP VIEW frame_slices AS
+            WITH RECURSIVE ancestors(frame_id, parent_id) AS (
+                SELECT id, parent_id FROM slice
+                WHERE name IN ('eglSwapBuffersWithDamageKHR', 'eglSwapBuffers')
+                UNION ALL
+                SELECT a.frame_id, p.parent_id
+                FROM ancestors a JOIN slice p ON p.id = a.parent_id
+                WHERE p.parent_id IS NOT NULL
+            )
+            SELECT s.* FROM slice s
+            WHERE s.name LIKE 'postFramebuffer%'
+               OR (s.name IN ('eglSwapBuffersWithDamageKHR', 'eglSwapBuffers')
+                   AND NOT EXISTS (
+                       SELECT 1 FROM ancestors a JOIN slice p ON p.id = a.parent_id
+                       WHERE a.frame_id = s.id AND p.track_id = s.track_id
+                         AND p.name IN ('eglSwapBuffersWithDamageKHR', 'eglSwapBuffers')
+                   ))
+        """)
+
         res_it = self._tp.query("""
             SELECT upid, utid, pid, tid, thread.name AS thread_name, MAX(slice.name LIKE 'postFramebuffer%') AS is_surfaceflinger, count(*) AS cnt,
             (max(ts)-min(ts))/1e9 AS dur_s
-            FROM slice
+            FROM frame_slices AS slice
             JOIN thread_track ON slice.track_id = thread_track.id
             JOIN thread USING(utid)
             JOIN process USING (upid)
@@ -249,12 +276,16 @@ class PerfettoParser:
             self._tp.query(
                 """
                 CREATE TEMP VIEW thread_durs AS
-                                SELECT tid, thread.name AS thread_name, ts - LAG(ts) OVER (ORDER BY ts) AS dur
-                                FROM slice
-                                JOIN thread_track ON slice.track_id = thread_track.id
-                                JOIN thread USING(utid)
-                                WHERE utid == %s AND slice.name IN ('eglSwapBuffersWithDamageKHR', 'eglSwapBuffers')
-                                LIMIT -1 OFFSET 1
+                    SELECT * FROM (
+                        SELECT tid, thread.name AS thread_name, ts,
+                               ts - LAG(ts) OVER (
+                                   PARTITION BY slice.track_id ORDER BY ts, slice.id
+                               ) AS dur
+                        FROM frame_slices AS slice
+                        JOIN thread_track ON slice.track_id = thread_track.id
+                        JOIN thread USING(utid)
+                        WHERE utid == %s AND slice.name IN ('eglSwapBuffersWithDamageKHR', 'eglSwapBuffers')
+                    ) WHERE dur IS NOT NULL
                 """
                 % (thread.utid)
             )
@@ -294,15 +325,10 @@ class PerfettoParser:
             )
             res_it = self._tp.query(
                 """
-                SELECT tid, thread.name AS thread_name, ts, ts - LAG(ts) OVER (ORDER BY ts) AS dur_ns
-                FROM slice
-                JOIN thread_track ON slice.track_id = thread_track.id
-                JOIN thread USING(utid)
-                WHERE utid == %s AND slice.name IN ('eglSwapBuffersWithDamageKHR', 'eglSwapBuffers')
-                ORDER BY dur_ns DESC
+                SELECT tid, thread_name, ts, dur AS dur_ns FROM thread_durs
+                ORDER BY dur DESC, ts
                 LIMIT 10
             """
-                % (thread.utid)
             )
             for row in res_it:
                 if row.dur_ns is None:
@@ -338,8 +364,8 @@ class PerfettoParser:
             self._tp.query(
                 """
                 CREATE TEMP VIEW sv_durs AS
-                    SELECT ts - LAG(ts) OVER (ORDER BY ts) AS dur, ts FROM
-                        (SELECT value - LAG(value) OVER (ORDER BY ts) AS vdiff,ts
+                    SELECT ts - LAG(ts) OVER (ORDER BY ts, id) AS dur, ts FROM
+                        (SELECT value - LAG(value) OVER (ORDER BY ts, id) AS vdiff, ts, id
                         FROM counter AS c
                         WHERE c.track_id=%d) AS t
                     WHERE vdiff > 0
@@ -412,29 +438,24 @@ class PerfettoParser:
         print_section()
         print("CPU frequencies stat:")
 
-        for cpu in (0, 4, 7):
-            self.do_freq_stat_on(cpu)
+        self._tp.query("INCLUDE PERFETTO MODULE linux.cpu.frequency")
+        for row in self._tp.query(
+            "SELECT DISTINCT cpu FROM cpu_frequency_counters ORDER BY cpu"
+        ):
+            self.do_freq_stat_on(row.cpu)
 
     def do_freq_stat_on(self, cpu: int) -> None:
         """CPU frequencies statistics on specified cpu"""
-        self._tp.query("DROP VIEW IF EXISTS freq_durs")
-        self._tp.query(
+        res_it = self._tp.query(
             """
-            CREATE TEMP VIEW freq_durs AS
-            SELECT LEAD(ts) OVER (ORDER BY ts) - ts AS dur_ns, cpu, value
-            FROM counter AS c
-            LEFT JOIN cpu_counter_track AS t ON c.track_id = t.id
-            WHERE cpu=%d AND t.name = 'cpufreq'
-        """
-            % (cpu)
+            SELECT freq AS value, sum(dur)/1e6 AS sum_ms, count(*) AS cnt
+            FROM cpu_frequency_counters
+            WHERE cpu = %d AND freq IS NOT NULL AND dur > 0
+            GROUP BY freq
+            ORDER BY freq
+            """
+            % cpu
         )
-
-        res_it = self._tp.query("""
-            SELECT value, sum(dur_ns)/1e6 AS sum_ms, count(*) AS cnt
-            FROM freq_durs
-            GROUP BY value
-            ORDER BY value
-        """)
 
         # Show results
         if len(res_it) > 0:
@@ -444,10 +465,10 @@ class PerfettoParser:
                 % ("Freq", "Dur (ms)", "Count", "Percent", "Percent Bar")
             )
             for row in res_it:
-                sum_ms = int(row.sum_ms or 0)
+                sum_ms = row.sum_ms or 0
                 pct = percent(ms2ns(sum_ms), self.get_trace_duration())
                 print(
-                    "%8d %9d %7d %6.1f%% %30s"
+                    "%8d %9.3f %7d %6.1f%% %30s"
                     % (row.value, sum_ms, row.cnt, pct, percent_bar(pct, 30))
                 )
 
@@ -634,7 +655,9 @@ class PerfettoParser:
 
         res_it = self._tp.query(
             """
-            SELECT ts - LAG(ts) OVER (ORDER BY ts) AS dur_ns
+            SELECT ts - LAG(ts) OVER (
+                       PARTITION BY counter.track_id ORDER BY ts, counter.id
+                   ) AS dur_ns
             FROM counter
             JOIN process_counter_track ON counter.track_id = process_counter_track.id
             WHERE name = '%s'
@@ -642,10 +665,7 @@ class PerfettoParser:
         """
             % (name)
         )
-        durs_ns = [row.dur_ns for row in res_it]
-        # Drop the first element which has duration value '[NULL]'
-        if len(durs_ns) > 0:
-            durs_ns = durs_ns[1:]
+        durs_ns = [row.dur_ns for row in res_it if row.dur_ns is not None]
         avg_dur_ns = average(durs_ns)
         if avg_dur_ns:
             print(
@@ -723,6 +743,12 @@ class PerfettoParser:
 
     def do_cpu_time_per_process(self, pid: int | None = None) -> None:
         """Calculate CPU running time for each process"""
+        cpu_ids = [
+            row.cpu
+            for row in self._tp.query(
+                "SELECT DISTINCT cpu FROM sched WHERE cpu >= 0 ORDER BY cpu"
+            )
+        ]
         self._tp.query("DROP VIEW IF EXISTS cpu_time")
         self._tp.query("""
             CREATE TEMP VIEW cpu_time AS
@@ -758,53 +784,32 @@ class PerfettoParser:
         print("2. Process CPU N % = Process CPU N time / Process total CPU time")
         if pid is not None:
             print(
-                "3. Capacity % calculation use simplified fomula and assumes all CPUs at max freq"
+                "3. Capacity % assumes the selected CPU profile at maximum frequency; N/A means CPU IDs are not covered."
             )
-            print(
-                f"%8s%{self._procname_len}s%13s%11s%9s  %8s%8s%8s%8s%8s%8s%8s%8s%8s"
-                % (
-                    "Pid",
-                    "Proc Name",
-                    "CPU Time(ms)",
-                    "CPU Time%",
-                    "Count",
-                    "CPU0 %",
-                    "CPU1 %",
-                    "CPU2 %",
-                    "CPU3 %",
-                    "CPU4 %",
-                    "CPU5 %",
-                    "CPU6 %",
-                    "CPU7 %",
-                    "Capa %",
-                )
-            )
-        else:
-            print(
-                f"%8s%{self._procname_len}s%13s%11s%9s  %8s%8s%8s%8s%8s%8s%8s%8s"
-                % (
-                    "Pid",
-                    "Proc Name",
-                    "CPU Time(ms)",
-                    "CPU Time%",
-                    "Count",
-                    "CPU0 %",
-                    "CPU1 %",
-                    "CPU2 %",
-                    "CPU3 %",
-                    "CPU4 %",
-                    "CPU5 %",
-                    "CPU6 %",
-                    "CPU7 %",
-                )
-            )
+        header = f"%8s%{self._procname_len}s%13s%11s%9s  " % (
+            "Pid",
+            "Proc Name",
+            "CPU Time(ms)",
+            "CPU Time%",
+            "Count",
+        )
+        header += "".join(f"{'CPU' + str(cpu) + ' %':>8}" for cpu in cpu_ids)
+        if pid is not None:
+            header += f"{'Capa %':>8}"
+        print(header)
 
         upids: list[int] = []
         proc_cpu_times = []
         for row in res_it:
             if len(upids) == 0 or row.upid != upids[-1]:
                 proc_cpu_times.append(
-                    ProcCpuTime(row.pid, row.upid, row.total_cpu_ms, row.cnt, [0] * 8)
+                    ProcCpuTime(
+                        row.pid,
+                        row.upid,
+                        row.total_cpu_ms,
+                        row.cnt,
+                        dict.fromkeys(cpu_ids, 0.0),
+                    )
                 )
                 upids.append(row.upid)
             proc_cpu_times[-1].cpu_ms_per_cpu[row.cpu] = row.cpu_ms
@@ -821,19 +826,23 @@ class PerfettoParser:
                 ),
                 end="",
             )
-            for cpu_ms in p.cpu_ms_per_cpu:
+            for cpu in cpu_ids:
+                cpu_ms = p.cpu_ms_per_cpu[cpu]
                 print("%8d" % (percent(cpu_ms, p.cpu_ms)), end="")
 
             # Extra capacity calculation
             if pid is not None:
                 capacity = CpuCapacity(args.cpu_type)
-                total_cap = 0.0
-                for i, cpu_ms in enumerate(p.cpu_ms_per_cpu):
-                    total_cap += cpu_ms * capacity.max_cap(i)
-                total_cap /= ns2ms(self.get_trace_duration())
-                logd("%f, %d" % (total_cap, capacity.max_total_cap()))
-
-                print("%8.3f" % (percent(total_cap, capacity.max_total_cap())), end="")
+                if any(cpu >= len(capacity.cpu_info.caps) for cpu in cpu_ids):
+                    print(f"{'N/A':>8}", end="")
+                else:
+                    total_cap = sum(
+                        cpu_ms * capacity.max_cap(cpu)
+                        for cpu, cpu_ms in p.cpu_ms_per_cpu.items()
+                    ) / ns2ms(self.get_trace_duration())
+                    print(
+                        "%8.3f" % percent(total_cap, capacity.max_total_cap()), end=""
+                    )
 
             print("")
 
@@ -960,39 +969,20 @@ class PerfettoParser:
         print("Trace duration (ms): %d" % (ns2ms(self.get_trace_duration())))
 
     def parse_basic_info(self) -> bool:
-        """Parse basic info like trace start ts, duration etc. from trace file. Must be executed first.
-        We use interval between first and last sched_slice to estimate total trace duration in
-        ns, assuming that sched_slices should always exist in traces."""
-        # Get first sched_slice
-        start_ts = -1
-        res_it = self._tp.query("""
-            SELECT ts FROM sched_slice
-            ORDER BY ts
-            LIMIT 1
-        """)
-        for row in res_it:
-            start_ts = int(row.ts)
-
-        # Get last sched_slice
-        res_it = self._tp.query("""
-            SELECT ts, dur FROM sched_slice
-            ORDER BY ts DESC
-            LIMIT 1
-        """)
-        end_ts = -1
-        for row in res_it:
-            end_ts = int(row.ts)
-            dur = int(row.dur)
-            if dur == -1:
-                dur = 0
-        if start_ts == -1 or end_ts == -1:
-            print("Error: start or end timestamp not found. Not a valid trace file?")
-            return False
-        end_ts += dur
-
-        self._start_ts = start_ts
-        self._trace_dur_ns = end_ts - start_ts
-        return True
+        """Read the full trace interval independently of scheduling availability."""
+        for row in self._tp.query(
+            "SELECT trace_start() AS start_ts, trace_end() AS end_ts"
+        ):
+            if (
+                row.start_ts is not None
+                and row.end_ts is not None
+                and row.end_ts > row.start_ts
+            ):
+                self._start_ts = int(row.start_ts)
+                self._trace_dur_ns = int(row.end_ts - row.start_ts)
+                return True
+        print("Error: trace has no positive-duration time bounds.")
+        return False
 
     def get_start_ts(self) -> int:
         return self._start_ts
