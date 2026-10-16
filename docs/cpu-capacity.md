@@ -75,7 +75,7 @@ SM8750、SM8850 的 CPU 节点通过 SCMI 关联性能域，固定 DTS 没有给
 
 该配置来自 2026-10-16 的一台 MT6899 设备：Android API 36、Linux 6.6.89。读取每个 `cpuN/cpu_capacity` 得到 697、697、697、697、929、929、929、1024；`policy0`、`policy4`、`policy7` 的 `related_cpus` 分别为 0–3、4–6、7，`cpuinfo_max_freq` 分别为 2100000、3000000、3250000 kHz。
 
-这里 `normalized=True`，总权重为 `4×697 + 3×929 + 1024 = 6599`，不再乘频率。这是特定设备/固件的参考快照，不保证所有 D8400 的数值相同；同平台 trace 的解析验证见[真实设备验证](validation.md)。以下只读命令可用于核对其他设备：
+这里 `normalized=True`，总权重为 `4×697 + 3×929 + 1024 = 6599`，不再乘频率。这是特定设备/固件的参考快照，不保证所有 D8400 的数值相同。以下只读命令可用于核对其他设备：
 
 ```sh
 adb shell 'for c in /sys/devices/system/cpu/cpu[0-9]*; do echo "$c"; cat "$c/cpu_capacity"; done'
