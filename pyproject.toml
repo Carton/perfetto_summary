@@ -1,0 +1,62 @@
+[project]
+name = "perfetto-summary"
+version = "0.1.0"
+description = "Summarize Android Perfetto traces with frame and CPU statistics"
+readme = "README.md"
+license-files = ["licenses/*"]
+requires-python = ">=3.12"
+dependencies = ["perfetto==0.58.2"]
+
+[project.optional-dependencies]
+plots = ["pandas>=2.2,<4", "matplotlib>=3.9,<4"]
+
+[project.scripts]
+perfetto_summary = "perfetto_summary.cli:main"
+
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = ["ruff>=0.14,<1", "mypy>=1.18,<2", "poethepoet>=0.37,<1", "build>=1.3,<2"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/perfetto_summary"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"THIRD_PARTY_NOTICES.md" = "perfetto_summary/THIRD_PARTY_NOTICES.md"
+
+[tool.hatch.build.targets.sdist]
+include = ["src/", "tests/", "docs/", "README.md", "pyproject.toml", "uv.lock", "licenses/", "THIRD_PARTY_NOTICES.md"]
+
+[tool.poe.tasks]
+lint = "ruff check src tests"
+lint-fix = "ruff check src tests --fix"
+format = "ruff format src tests"
+format-check = "ruff format src tests --check"
+mypy = "mypy src"
+test = "python -m unittest discover -s tests -v"
+build = "python -m build"
+check = ["format-check", "lint"]
+fix = ["format", "lint-fix"]
+check-full = ["format-check", "lint", "mypy", "test"]
+fix-full = ["lint-fix", "format", "mypy", "test"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP"]
+ignore = ["UP031"]
+
+[tool.mypy]
+python_version = "3.12"
+disallow_untyped_defs = true
+check_untyped_defs = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["perfetto.*", "pandas", "matplotlib.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
