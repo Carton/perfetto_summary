@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from perfetto_summary.output import bar, section, table, text
+
 
 def cpu_idle_rows(tp: Any) -> list[Any]:
     """Keep unknown time separate and count only observed idle-to-active edges."""
@@ -28,19 +30,37 @@ def cpu_idle_rows(tp: Any) -> list[Any]:
 
 def show_cpu_idle(tp: Any) -> None:
     """Print state indices without assigning device-specific C-state names."""
-    print("\n------------------------\nCPU idle residency:")
+    section("CPU idle residency")
     rows = cpu_idle_rows(tp)
     if not rows:
-        print("N/A: no CPU idle intervals.")
+        text("N/A: no CPU idle intervals.")
         return
-    print(
-        f"{'CPU':>5} {'Track':>7} {'State':>8} {'Time(ms)':>12} {'Trace%':>9} {'Coverage%':>10} {'Idle exits':>11}"
+    table(
+        (
+            "CPU",
+            "Track",
+            "State",
+            "Time(ms)",
+            "Trace%",
+            "Coverage%",
+            "Idle exits",
+            "Trace share",
+        ),
+        [
+            (
+                r.cpu,
+                r.track_id,
+                "active" if r.idle == -1 else str(r.idle),
+                f"{r.duration_ns / 1e6:.3f}",
+                f"{r.trace_pct:.2f}",
+                f"{r.coverage_pct:.2f}",
+                r.exits,
+                bar(r.trace_pct),
+            )
+            for r in rows
+        ],
+        right=(0, 1, 3, 4, 5, 6),
     )
-    for row in rows:
-        state = "active" if row.idle == -1 else str(row.idle)
-        print(
-            f"{row.cpu:5} {row.track_id:7} {state:>8} {row.duration_ns / 1e6:12.3f} {row.trace_pct:9.2f} {row.coverage_pct:10.2f} {row.exits:11}"
-        )
-    print(
+    text(
         "State indices are device-specific; exits are observed CPU transitions, not process wakeups."
     )

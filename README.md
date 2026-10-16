@@ -36,6 +36,8 @@ Host support and the prebuilt version follow the official package manifest. The 
 
 ## Reading the output
 
+The report uses plain text tables with complete names, right-aligned numbers and no color or ANSI escape sequences. Redirect it with `uv run perfetto_summary trace.perfetto-trace > summary.txt`; redirected tables default to 120 columns and expand if needed to preserve numeric cells. Input control characters are shown as visible escapes. Long names wrap, while numeric cells remain intact. CPU distribution is listed separately from process totals to avoid a wide column per core. `#` bars show the stated sample or trace-time share, capped at 100%; the printed numbers retain their original values.
+
 - FPS Summary measures EGL/compositor marker cadence; SurfaceView stat measures positive counter changes. Neither is a direct displayed-FPS measurement, and their frame counts must not be added together.
 - Long frame intervals indicate pauses worth inspecting, not confirmed jank. The listed timestamp marks the end of the interval.
 - Missing frame or scheduling events mean the corresponding metric may be unavailable. A blank section does not mean an application's actual FPS is zero.

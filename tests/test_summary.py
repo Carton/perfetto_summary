@@ -96,6 +96,13 @@ class SummaryTests(unittest.TestCase):
         with contextlib.redirect_stdout(self.output):
             self.parser.do_schedule_stat([ThreadInfo("render", 1, 1, 10, 10)])
 
+    def test_process_names_are_not_truncated_for_display(self):
+        name = "[red]com.example." + "long_process_name_" * 10
+        self.tp.db.execute("ALTER TABLE process ADD COLUMN name TEXT")
+        self.tp.db.execute("UPDATE process SET name=?", (name,))
+        self.parser.query_proc_names()
+        self.assertEqual(self.parser.get_proc_name(1), name)
+
     def test_vsync_nanosecond_cutoff(self):
         self.assertEqual(durations_to_fpses([0, 1, 2500000, 5000000]), [200.0])
 
@@ -238,8 +245,9 @@ class SummaryTests(unittest.TestCase):
             contextlib.redirect_stdout(self.output),
         ):
             self.parser.do_cpu_time_per_process(10)
-        self.assertIn("CPU9 %", self.output.getvalue())
-        self.assertNotIn("CPU7 %", self.output.getvalue())
+        self.assertIn("CPU9=66%", self.output.getvalue())
+        self.assertIn("CPU0=33%", self.output.getvalue())
+        self.assertNotIn("CPU7=", self.output.getvalue())
         self.assertIn("N/A", self.output.getvalue())
 
     def test_nonpositive_trace_bounds_are_rejected(self):

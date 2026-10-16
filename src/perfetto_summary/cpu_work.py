@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from perfetto_summary.output import section, table, text
+
 
 def cpu_work_rows(
     tp: Any, *, threads: bool = False, pid: int | None = None
@@ -67,23 +69,30 @@ def cpu_work_rows(
 
 def show_cpu_work(tp: Any, pid: int | None = None) -> None:
     """Print busiest processes and threads with frequency coverage."""
-    print(
-        "\n------------------------\nCPU work estimates (known-frequency runtime only):"
-    )
+    section("CPU work estimates (known-frequency runtime only)")
     for threads in (False, True):
         rows = cpu_work_rows(tp, threads=threads, pid=pid)
-        print("Threads:" if threads else "Processes:")
-        print(
-            f"{'ID':>8} {'Name':<30} {'Run(ms)':>12} {'Freq coverage':>14} {'Avg(MHz)':>12} {'Est(Mcycles)':>14}"
-        )
+        text("Threads:" if threads else "Processes:")
+        display_rows = []
         for row in rows[:10]:
             avg = (
                 "N/A" if row.avg_freq_khz is None else f"{row.avg_freq_khz / 1000:.3f}"
             )
             cycles = "N/A" if row.megacycles is None else f"{row.megacycles:.3f}"
-            print(
-                f"{row.entity_id:8} {(row.name or '')[:30]:<30} {row.runtime_ns / 1e6:12.3f} {row.coverage_pct:13.1f}% {avg:>12} {cycles:>14}"
+            display_rows.append(
+                (
+                    row.entity_id,
+                    row.name or "",
+                    f"{row.runtime_ns / 1e6:.3f}",
+                    f"{row.coverage_pct:.1f}%",
+                    avg,
+                    cycles,
+                )
             )
-        if not rows:
-            print("No non-idle scheduling data.")
-    print("Cycles are frequency × covered runtime estimates, not retired instructions.")
+        table(
+            ("ID", "Name", "Run(ms)", "Freq coverage", "Avg(MHz)", "Est(Mcycles)"),
+            display_rows,
+            right=(0, 2, 3, 4, 5),
+            empty="N/A: no non-idle scheduling data.",
+        )
+    text("Cycles are frequency × covered runtime estimates, not retired instructions.")

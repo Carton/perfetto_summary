@@ -3,6 +3,8 @@
 from collections import defaultdict
 from typing import Any
 
+from perfetto_summary.output import section, table, text
+
 
 def frame_timeline_rows(tp: Any, pid: int | None = None) -> list[Any]:
     """Aggregate actual timeline labels without inventing display timestamps."""
@@ -41,10 +43,10 @@ def frame_timeline_rows(tp: Any, pid: int | None = None) -> list[Any]:
 
 def show_frame_timeline(tp: Any, pid: int | None = None) -> None:
     """Print native outcome labels; stuffing alone is not tagged jank."""
-    print("\n------------------------\nFrameTimeline outcomes:")
+    section("FrameTimeline outcomes")
     rows = frame_timeline_rows(tp, pid)
     if not rows:
-        print("N/A: no actual FrameTimeline data for this selection.")
+        text("N/A: no actual FrameTimeline data for this selection.")
         return
     groups: dict[tuple[Any, ...], list[Any]] = defaultdict(list)
     for row in rows:
@@ -67,23 +69,39 @@ def show_frame_timeline(tp: Any, pid: int | None = None) -> None:
         late = sum(r.complete for r in outcomes if r.present_type == "Late Present")
         dropped = sum(r.complete for r in outcomes if r.present_type == "Dropped Frame")
         ratio = f"{100.0 * jank / known:.2f}%" if known else "N/A"
-        print(
-            f"{kind} PID={process_id} UPID={upid} {name or ''} Layer={layer if layer is not None else '(unavailable)'}"
+        text(f"\n{kind} PID={process_id} UPID={upid}")
+        table(
+            ("Identity", "Value"),
+            [
+                ("Process", name or ""),
+                ("Layer", layer if layer is not None else "(unavailable)"),
+            ],
         )
-        print(
+        text(
             f"  Complete={total} Tagged jank={jank}/{known} ({ratio}) Late={late} Dropped={dropped} Unknown tag={total - known}"
         )
-        print(
-            f"  Incomplete records={sum(r.incomplete for r in outcomes)} Duplicate app records={sum(r.duplicates for r in outcomes)} Unkeyed app records={sum(r.unkeyed for r in outcomes)}"
+        text(
+            f"  Incomplete records={sum(r.incomplete for r in outcomes)} "
+            f"Duplicate app records={sum(r.duplicates for r in outcomes)} "
+            f"Unkeyed app records={sum(r.unkeyed for r in outcomes)}"
         )
-        for r in outcomes:
-            if r.complete:
-                print(
-                    f"    {r.complete:6}  {r.present_type or '(unknown present)'} | {r.jank_tag or '(unknown tag)'} | {r.jank_type or '(unknown cause)'}"
+        table(
+            ("Count", "Presentation", "Jank tag", "Cause"),
+            [
+                (
+                    r.complete,
+                    r.present_type or "(unknown present)",
+                    r.jank_tag or "(unknown tag)",
+                    r.jank_type or "(unknown cause)",
                 )
-    print(
+                for r in outcomes
+                if r.complete
+            ],
+            right=(0,),
+        )
+    text(
         "Jank/late/drop can overlap. SF counts are timeline records; displays are not merged or deduplicated by token."
     )
-    print(
+    text(
         "App timeline completion is not screen presentation; these counts do not define displayed FPS."
     )

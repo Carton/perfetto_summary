@@ -17,6 +17,7 @@ from perfetto_summary.cpu_capacity import CpuCapacity, cpu_infos
 from perfetto_summary.cpu_idle import show_cpu_idle
 from perfetto_summary.cpu_work import show_cpu_work
 from perfetto_summary.frame_timeline import show_frame_timeline
+from perfetto_summary.output import bar, section, table, text
 from perfetto_summary.scheduling import show_scheduling_wait
 
 args: argparse.Namespace
@@ -24,18 +25,12 @@ args: argparse.Namespace
 DEFAULT_PARSER = "localhost:9001"
 DEFAULT_CPU_TYPE = "sm8250"
 MIN_VSYNC_INTERVAL = 1e9 / 400.0
-PROC_NAME_MAX_LEN = 50
-THREAD_NAME_MAX_LEN = 18
 DETAILED_INFO_PROCS_NUM = 10
 DETAILED_INFO_THREADS_NUM = 8
 
 
 def logd(s: object) -> None:
     logging.debug(s)
-
-
-def print_section() -> None:
-    print("\n------------------------")
 
 
 def ns2ms(ns: float) -> float:
@@ -61,11 +56,6 @@ def percent(a: float, b: float) -> float:
         return 0.0
     else:
         return a * 100.0 / b
-
-
-def percent_bar(pct: float, num: int) -> str:
-    """Returns maxium `num' of '*' characters for percentage value `pct'"""
-    return "*" * (int(pct * num / 100.0))
 
 
 def durations_to_fpses(durations: Iterable[float]) -> list[float]:
@@ -125,7 +115,6 @@ class PerfettoParser:
 
     def reset(self) -> None:
         self._procnames: dict[int, str] = {}
-        self._procname_len = 0
         self._threadnames: dict[int, str] = {}
         self._start_ts = 0
         self._trace_dur_ns = -1
@@ -141,13 +130,13 @@ class PerfettoParser:
         elif ":" in self._parser:  # Simple check to make sure it's 'host:port' format
             self._tp = TraceProcessor(trace=trace_file, addr=self._parser)
         else:
-            print(
+            text(
                 "Error: no valid perfetto parser specified. Should be 'address:port' format or file path of binary file."
             )
             return
 
         if not self.parse_basic_info():
-            print("Error: Trace basic info parsing failure. Not a valid trace file?")
+            text("Error: Trace basic info parsing failure. Not a valid trace file?")
             return
 
         # Show basic info first
@@ -212,20 +201,8 @@ class PerfettoParser:
             GROUP BY track_id
             ORDER BY cnt
         """)
-        print_section()
-        print("FPS Summary:")
-        print(
-            f"%8s%8s%{self._procname_len}s%18s %15s   %13s   %6s"
-            % (
-                "Pid",
-                "Tid",
-                "Proc Name",
-                "Thread Name",
-                "Total Frames",
-                "Duration(ms)",
-                "FPS",
-            )
-        )
+        section("FPS Summary")
+        display_rows = []
 
         threads = []
         main_render_threads = []
@@ -243,18 +220,30 @@ class PerfettoParser:
             # Find the "Main" render threads: fps > 20, and are not SurfaceFlinger
             if fps > 20 and not row.is_surfaceflinger:
                 main_render_threads.append(thread_info)
-            print(
-                f"%8s%8s%{self._procname_len}s%18s %15d   %13.1f   %06.3f"
-                % (
+            display_rows.append(
+                (
                     row.pid,
                     row.tid,
                     self.get_proc_name(row.upid),
                     row.thread_name,
                     row.cnt,
-                    row.dur_s * 1000,
-                    fps,
+                    f"{row.dur_s * 1000:.1f}",
+                    f"{fps:06.3f}",
                 )
             )
+        table(
+            (
+                "Pid",
+                "Tid",
+                "Proc Name",
+                "Thread Name",
+                "Total Frames",
+                "Duration(ms)",
+                "FPS",
+            ),
+            display_rows,
+            right=(0, 1, 4, 5, 6),
+        )
         logd(threads)
 
         self.do_render_threads_stat(main_render_threads)
@@ -264,23 +253,19 @@ class PerfettoParser:
 
     def do_render_threads_stat(self, threads: list[ThreadInfo]) -> None:
         """Do manual histogram on main render threads"""
-        print_section()
-        print("Render threads stat:")
-        print("Note: Timestamp(s) can be used to locate frame in trace file.")
-        print(
+        section("Render threads stat")
+        text("Count share bars: fraction of this thread's interval samples.")
+        text("Note: Timestamp(s) can be used to locate frame in trace file.")
+        text(
             "      TS_View here is timestamp relative to start of trace file. i.e. timestamp in Chrome view"
         )
         for thread in threads:
             # Show histogram
-            print(
+            text(
                 "\nProc %d (%s) frame duration histogram:"
                 % (thread.pid, self.get_proc_name(thread.upid))
             )
 
-            print(
-                "%8s%18s%13s%10s%13s"
-                % ("Tid", "Thread Name", "Range", "Count", "Avg Dur(ms)")
-            )
             self._tp.query("DROP VIEW IF EXISTS thread_durs")
             self._tp.query(
                 """
@@ -316,22 +301,30 @@ class PerfettoParser:
                 GROUP BY range
                 ORDER BY range
             """)
-            for row in res_it:
-                print(
-                    "%8s%18s%13s%10d%13.1f"
-                    % (row.tid, row.thread_name, row.range, row.count, row.avg_dur_ms)
-                )
+            histogram = list(res_it)
+            total = sum(row.count for row in histogram)
+            table(
+                ("Tid", "Thread Name", "Range", "Count", "Avg Dur(ms)", "Count share"),
+                [
+                    (
+                        r.tid,
+                        r.thread_name,
+                        r.range,
+                        r.count,
+                        f"{r.avg_dur_ms:.1f}",
+                        bar(r.count, total),
+                    )
+                    for r in histogram
+                ],
+                right=(0, 3, 4),
+            )
 
             # Show top 'Janks'
-            print(
+            text(
                 "\nProc %d (%s) top duration frames (possibly `Janks'):"
                 % (thread.pid, self.get_proc_name(thread.upid))
             )
 
-            print(
-                "%8s%18s   %13s   %13s   %13s"
-                % ("Tid", "Thread Name", "Timestamp(s)", "TS_View(ms)", "Duration(ms)")
-            )
             res_it = self._tp.query(
                 """
                 SELECT tid, thread_name, ts, dur AS dur_ns FROM thread_durs
@@ -339,28 +332,30 @@ class PerfettoParser:
                 LIMIT 10
             """
             )
-            for row in res_it:
-                if row.dur_ns is None:
-                    continue
-                print(
-                    "%8s%18s   %13.6f   %13.3f   %13.1f"
-                    % (
-                        row.tid,
-                        row.thread_name,
-                        ns2s(row.ts),
-                        ns2ms(row.ts - self.get_start_ts()),
-                        ns2ms(row.dur_ns),
+            table(
+                ("Tid", "Thread Name", "Timestamp(s)", "TS_View(ms)", "Duration(ms)"),
+                [
+                    (
+                        r.tid,
+                        r.thread_name,
+                        f"{ns2s(r.ts):.6f}",
+                        f"{ns2ms(r.ts - self.get_start_ts()):.3f}",
+                        f"{ns2ms(r.dur_ns):.1f}",
                     )
-                )
+                    for r in res_it
+                    if r.dur_ns is not None
+                ],
+                right=(0, 2, 3, 4),
+            )
 
     def do_surfaceview_stat(self, threads: list[ThreadInfo]) -> None:
         """Do manual histogram on those 'BufferTX - SurfaceView[XXX]' counters.
         Sometimes eglSwapBuffers etc. binder calls are missing in trace file and we have to use
         SurfaceView stats instead."""
-        print_section()
-        print("SurfaceView stat:")
-        print("Note: Timestamp(s) can be used to locate frame in trace file.")
-        print(
+        section("SurfaceView stat")
+        text("Count share bars: fraction of this surface's interval samples.")
+        text("Note: Timestamp(s) can be used to locate frame in trace file.")
+        text(
             "      TS_View here is timestamp relative to start of trace file. i.e. timestamp in Chrome view"
         )
 
@@ -393,10 +388,8 @@ class PerfettoParser:
                     fps = 1e9 / row.avg_dur
 
             # Show histogram
-            print("\n%d. %s" % (sv_num, sv_row.name))
-            print("\nFrame duration histogram (FPS %.3f, Count %d):" % (fps, row.cnt))
-
-            print("%13s%10s%13s" % ("Range", "Count", "Avg Dur(ms)"))
+            text("\n%d. %s" % (sv_num, sv_row.name))
+            text("\nFrame duration histogram (FPS %.3f, Count %d):" % (fps, row.cnt))
 
             res_it = self._tp.query("""
                 SELECT
@@ -416,36 +409,43 @@ class PerfettoParser:
                 ORDER BY range
                 """)
 
-            for row in res_it:
-                print("%13s%10d%13.1f" % (row.range, row.count, row.avg_dur_ms))
+            histogram = list(res_it)
+            total = sum(row.count for row in histogram)
+            table(
+                ("Range", "Count", "Avg Dur(ms)", "Count share"),
+                [
+                    (r.range, r.count, f"{r.avg_dur_ms:.1f}", bar(r.count, total))
+                    for r in histogram
+                ],
+                right=(1, 2),
+            )
 
             # Show top 'Janks'
-            print("\nTop duration frames (possibly `Janks'):")
+            text("\nTop duration frames (possibly `Janks'):")
 
-            print(
-                "%13s   %13s   %13s" % ("Timestamp(s)", "TS_View(ms)", "Duration(ms)")
-            )
             res_it = self._tp.query("""
                 SELECT * FROM sv_durs
                 ORDER BY dur DESC
                 LIMIT 10
             """)
-            for row in res_it:
-                print(
-                    "%13.6f   %13.3f   %13.1f"
-                    % (
-                        ns2s(row.ts),
-                        ns2ms(row.ts - self.get_start_ts()),
-                        ns2ms(row.dur),
+            table(
+                ("Timestamp(s)", "TS_View(ms)", "Duration(ms)"),
+                [
+                    (
+                        f"{ns2s(r.ts):.6f}",
+                        f"{ns2ms(r.ts - self.get_start_ts()):.3f}",
+                        f"{ns2ms(r.dur):.1f}",
                     )
-                )
+                    for r in res_it
+                ],
+                right=(0, 1, 2),
+            )
 
             sv_num += 1
 
     def do_cpu_freq_stats(self) -> None:
         """CPU frequencies statistics"""
-        print_section()
-        print("CPU frequencies stat:")
+        section("CPU frequencies stat")
 
         self._tp.query("INCLUDE PERFETTO MODULE linux.cpu.frequency")
         for row in self._tp.query(
@@ -468,18 +468,19 @@ class PerfettoParser:
 
         # Show results
         if len(res_it) > 0:
-            print("\nCPU %d:" % cpu)
-            print(
-                "%8s %9s %7s %7s %30s"
-                % ("Freq", "Dur (ms)", "Count", "Percent", "Percent Bar")
-            )
+            text("\nCPU %d:" % cpu)
+            display_rows = []
             for row in res_it:
                 sum_ms = row.sum_ms or 0
                 pct = percent(ms2ns(sum_ms), self.get_trace_duration())
-                print(
-                    "%8d %9.3f %7d %6.1f%% %30s"
-                    % (row.value, sum_ms, row.cnt, pct, percent_bar(pct, 30))
+                display_rows.append(
+                    (int(row.value), f"{sum_ms:.3f}", row.cnt, f"{pct:.1f}%", bar(pct))
                 )
+            table(
+                ("Freq(kHz)", "Dur(ms)", "Count", "Percent", "Trace share"),
+                display_rows,
+                right=(0, 1, 2, 3),
+            )
 
     def _do_sched_stat_on_query(self, res_it: Iterable[Any]) -> dict[int, SchedTime]:
         """Do sched statistics on queried rows. i.e. sched running/runnable/io_wait time summary
@@ -551,43 +552,38 @@ class PerfettoParser:
         )
         thread_scheds = self._do_sched_stat_on_query(res_it)
 
-        print_section()
-        print("Render Processes/Threads schedule state summary:")
-        print("Note: sched% = runnable / running, iow% = io_wait / running")
-        print(
-            f"%8s%8s%{self._procname_len}s%18s   %13s %6s %12s   %13s %6s %12s"
-            % (
-                "Pid",
-                "Tid",
-                "Proc Name",
-                "Thread Name",
-                "Proc sched%",
-                "iow%",
-                "running(ms)",
-                "Thread sched%",
-                "iow%",
-                "running(ms)",
-            )
-        )
+        section("Render Processes/Threads schedule state summary")
+        text("Note: sched% = runnable / running, iow% = io_wait / running")
+        display_rows = []
         for thread in threads:
             proc_sched = proc_scheds.get(thread.upid, SchedTime())
             thread_sched = thread_scheds.get(thread.utid, SchedTime())
 
-            print(
-                f"%8s%8s%{self._procname_len}s%18s   %12.1f%% %5.1f%% %12d   %12.1f%% %5.1f%% %12d"
-                % (
-                    thread.pid,
-                    thread.tid,
-                    self.get_proc_name(thread.upid),
-                    thread.name,
-                    percent(proc_sched.runnable, proc_sched.running),
-                    percent(proc_sched.io_wait, proc_sched.running),
-                    ns2ms(proc_sched.running),
-                    percent(thread_sched.runnable, thread_sched.running),
-                    percent(thread_sched.io_wait, thread_sched.running),
-                    ns2ms(thread_sched.running),
-                )
+            display_rows.extend(
+                [
+                    (
+                        thread.pid,
+                        "Process",
+                        self.get_proc_name(thread.upid),
+                        f"{percent(proc_sched.runnable, proc_sched.running):.1f}%",
+                        f"{percent(proc_sched.io_wait, proc_sched.running):.1f}%",
+                        int(ns2ms(proc_sched.running)),
+                    ),
+                    (
+                        thread.tid,
+                        "Thread",
+                        thread.name,
+                        f"{percent(thread_sched.runnable, thread_sched.running):.1f}%",
+                        f"{percent(thread_sched.io_wait, thread_sched.running):.1f}%",
+                        int(ns2ms(thread_sched.running)),
+                    ),
+                ]
             )
+        table(
+            ("ID", "Scope", "Name", "sched%", "iow%", "running(ms)"),
+            display_rows,
+            right=(0, 3, 4, 5),
+        )
 
         ui_threads = self.get_ui_threads(threads)
         logd(ui_threads)
@@ -607,36 +603,28 @@ class PerfettoParser:
         )
         thread_scheds = self._do_sched_stat_on_query(res_it)
 
-        print_section()
-        print("%s schedule state summary:" % (title))
-        print("Note: sched% = runnable / running, iow% = io_wait / running")
-        print(
-            f"%8s%8s%{self._procname_len}s%18s   %13s %6s %12s"
-            % (
-                "Pid",
-                "Tid",
-                "Proc Name",
-                "Thread Name",
-                "Thread sched%",
-                "iow%",
-                "running(ms)",
-            )
-        )
+        section("%s schedule state summary" % (title))
+        text("Note: sched% = runnable / running, iow% = io_wait / running")
+        display_rows = []
         for thread in threads:
             thread_sched = thread_scheds.get(thread.utid, SchedTime())
 
-            print(
-                f"%8s%8s%{self._procname_len}s%18s   %12.1f%% %5.1f%% %12d"
-                % (
+            display_rows.append(
+                (
                     thread.pid,
                     thread.tid,
                     self.get_proc_name(thread.upid),
                     thread.name,
-                    percent(thread_sched.runnable, thread_sched.running),
-                    percent(thread_sched.io_wait, thread_sched.running),
-                    ns2ms(thread_sched.running),
+                    f"{percent(thread_sched.runnable, thread_sched.running):.1f}%",
+                    f"{percent(thread_sched.io_wait, thread_sched.running):.1f}%",
+                    int(ns2ms(thread_sched.running)),
                 )
             )
+        table(
+            ("Pid", "Tid", "Proc Name", "Thread Name", "sched%", "iow%", "running(ms)"),
+            display_rows,
+            right=(0, 1, 4, 5, 6),
+        )
 
     def do_frame_miss_stat(self) -> None:
         """Simple statistics of `FrameMissed' related counters"""
@@ -648,14 +636,11 @@ class PerfettoParser:
             WHERE name like '%%FrameMissed' or name in ('hasClientComposition')
             GROUP BY name
         """)
-        print_section()
-        print("Frame Miss Summary:")
-        for row in res_it:
-            print("%s #: %d" % (row.name, row.sum))
+        section("Frame Miss Summary")
+        table(("Counter", "Sum"), [(r.name, int(r.sum)) for r in res_it], right=(1,))
 
     def do_vsync_stat(self) -> None:
-        print_section()
-        print("VSYNC-app(sf) Summary:")
+        section("VSYNC-app(sf) Summary")
         self.do_vsync_stat_on("VSYNC-app")
         self.do_vsync_stat_on("VSYNC-sf")
 
@@ -677,7 +662,7 @@ class PerfettoParser:
         durs_ns = [row.dur_ns for row in res_it if row.dur_ns is not None]
         avg_dur_ns = average(durs_ns)
         if avg_dur_ns:
-            print(
+            text(
                 "%s avg duration: %.1f ms; avg Hz: %.2f"
                 % (name, ns2ms(avg_dur_ns), 1e9 / avg_dur_ns)
             )
@@ -690,9 +675,7 @@ class PerfettoParser:
             import matplotlib.pyplot as plt
             import pandas as pd
         except ImportError:
-            print(
-                "Skipping VSYNC histogram as pandas or matplotlib module not found..."
-            )
+            text("Skipping VSYNC histogram as pandas or matplotlib module not found...")
             return
 
         # Draw vsync-sf Fps histogram
@@ -731,24 +714,28 @@ class PerfettoParser:
             GROUP BY upid,range
             ORDER BY upid,range
         """)
-        print_section()
-        print("GPU Completion time simple histogram:")
-        print(
-            f"%8s%8s%{self._procname_len}s%13s%10s%13s"
-            % ("Pid", "Tid", "Proc Name", "Range", "Count", "Avg Dur(ms)")
-        )
-        for row in res_it:
-            print(
-                f"%8s%8s%{self._procname_len}s%13s%10d%13.1f"
-                % (
-                    row.pid,
-                    row.tid,
-                    self.get_proc_name(row.upid),
-                    row.range,
-                    row.count,
-                    row.avg_dur_ms,
+        section("GPU Completion time simple histogram")
+        text("Count share bars: fraction of each process's GPU wait samples.")
+        histogram = list(res_it)
+        totals: dict[int, int] = {}
+        for row in histogram:
+            totals[row.upid] = totals.get(row.upid, 0) + row.count
+        table(
+            ("Pid", "Tid", "Proc Name", "Range", "Count", "Avg Dur(ms)", "Count share"),
+            [
+                (
+                    r.pid,
+                    r.tid,
+                    self.get_proc_name(r.upid),
+                    r.range,
+                    r.count,
+                    f"{r.avg_dur_ms:.1f}",
+                    bar(r.count, totals[r.upid]),
                 )
-            )
+                for r in histogram
+            ],
+            right=(0, 1, 4, 5),
+        )
 
     def do_cpu_time_per_process(self, pid: int | None = None) -> None:
         """Calculate CPU running time for each process"""
@@ -785,27 +772,18 @@ class PerfettoParser:
             ORDER BY cpu_time.cpu_ms DESC, cpu
         """
         )
-        print_section()
-        print("CPU sched time statistics for each process:")
-        print(
+        section("CPU sched time statistics for each process")
+        text(
             "Note:\n1. Total CPU time and percentage here do not consider CPU differences"
         )
-        print("2. Process CPU N % = Process CPU N time / Process total CPU time")
+        text("2. Process CPU N % = Process CPU N time / Process total CPU time")
         if pid is not None:
-            print(
+            text(
                 "3. Capacity % assumes the selected CPU profile at maximum frequency; N/A means CPU IDs are not covered."
             )
-        header = f"%8s%{self._procname_len}s%13s%11s%9s  " % (
-            "Pid",
-            "Proc Name",
-            "CPU Time(ms)",
-            "CPU Time%",
-            "Count",
-        )
-        header += "".join(f"{'CPU' + str(cpu) + ' %':>8}" for cpu in cpu_ids)
+        headers = ["Pid", "Proc Name", "CPU Time(ms)", "CPU Time%", "Count"]
         if pid is not None:
-            header += f"{'Capa %':>8}"
-        print(header)
+            headers.append("Capa %")
 
         upids: list[int] = []
         proc_cpu_times = []
@@ -823,37 +801,43 @@ class PerfettoParser:
                 upids.append(row.upid)
             proc_cpu_times[-1].cpu_ms_per_cpu[row.cpu] = row.cpu_ms
 
+        display_rows: list[list[object]] = []
+        distributions = []
         for p in proc_cpu_times:
-            print(
-                f"%8s%{self._procname_len}s%13.1f%10.1f%%%9s  "
-                % (
+            display_row: list[object] = [
+                p.pid,
+                self.get_proc_name(p.upid),
+                f"{p.cpu_ms:.1f}",
+                f"{percent(ms2ns(p.cpu_ms), self.get_trace_duration()):.1f}%",
+                p.cnt,
+            ]
+            distributions.append(
+                (
                     p.pid,
-                    self.get_proc_name(p.upid),
-                    p.cpu_ms,
-                    percent(ms2ns(p.cpu_ms), self.get_trace_duration()),
-                    p.cnt,
-                ),
-                end="",
+                    "  ".join(
+                        f"CPU{cpu}={int(percent(p.cpu_ms_per_cpu[cpu], p.cpu_ms))}%"
+                        for cpu in cpu_ids
+                    ),
+                )
             )
-            for cpu in cpu_ids:
-                cpu_ms = p.cpu_ms_per_cpu[cpu]
-                print("%8d" % (percent(cpu_ms, p.cpu_ms)), end="")
 
             # Extra capacity calculation
             if pid is not None:
                 capacity = CpuCapacity(args.cpu_type)
                 if any(cpu >= len(capacity.cpu_info.caps) for cpu in cpu_ids):
-                    print(f"{'N/A':>8}", end="")
+                    display_row.append("N/A")
                 else:
                     total_cap = sum(
                         cpu_ms * capacity.max_cap(cpu)
                         for cpu, cpu_ms in p.cpu_ms_per_cpu.items()
                     ) / ns2ms(self.get_trace_duration())
-                    print(
-                        "%8.3f" % percent(total_cap, capacity.max_total_cap()), end=""
+                    display_row.append(
+                        f"{percent(total_cap, capacity.max_total_cap()):.3f}"
                     )
-
-            print("")
+            display_rows.append(display_row)
+        table(headers, display_rows, right=(0, *range(2, len(headers))))
+        text("\nPer-process CPU distribution (share of process CPU time):")
+        table(("Pid", "CPU shares"), distributions, right=(0,))
 
         upids = upids[: args.procs_num]
 
@@ -886,28 +870,24 @@ class PerfettoParser:
             pids[row.upid] = row.pid
 
         # Show results
-        print_section()
-        print("Thread CPU sched time statistics details for top processes:")
+        section("Thread CPU sched time statistics details for top processes")
         for upid in upids:
-            print(
-                "\nProc %d (%s) top threads:" % (pids[upid], self.get_proc_name(upid))
-            )
+            text("\nProc %d (%s) top threads:" % (pids[upid], self.get_proc_name(upid)))
 
-            print(
-                "%8s%18s%13s%11s%9s"
-                % ("Tid", "Thread Name", "CPU Time(ms)", "CPU Time%", "Count")
-            )
-            for row in rows[upid][:DETAILED_INFO_THREADS_NUM]:
-                print(
-                    "%8s%18s%13.1f%10.1f%%%9s"
-                    % (
-                        row.tid,
-                        row.threadname,
-                        row.cpu_ms,
-                        percent(ms2ns(row.cpu_ms), self.get_trace_duration()),
-                        row.total,
+            table(
+                ("Tid", "Thread Name", "CPU Time(ms)", "CPU Time%", "Count"),
+                [
+                    (
+                        r.tid,
+                        r.threadname,
+                        f"{r.cpu_ms:.1f}",
+                        f"{percent(ms2ns(r.cpu_ms), self.get_trace_duration()):.1f}%",
+                        r.total,
                     )
-                )
+                    for r in rows[upid][:DETAILED_INFO_THREADS_NUM]
+                ],
+                right=(0, 2, 3, 4),
+            )
 
     def do_per_cpu_stat(self) -> None:
         """Statistics of CPU freq, state, sched time etc. info per CPU"""
@@ -917,18 +897,20 @@ class PerfettoParser:
             GROUP BY cpu, state
             ORDER BY cpu
         """)
-        print_section()
-        print("Per-CPU statistics:")
-        print("%8s%13s%11s" % ("CPU", "Run Time(ms)", "Run Time%"))
-        for row in res_it:
-            print(
-                "%8s%13.1f%10.1f%%"
-                % (
-                    row.cpu,
-                    row.sum_dur_ms,
-                    percent(ms2ns(row.sum_dur_ms), self.get_trace_duration()),
+        section("Per-CPU statistics")
+        table(
+            ("CPU", "Run Time(ms)", "Run Time%", "Trace share"),
+            [
+                (
+                    r.cpu,
+                    f"{r.sum_dur_ms:.1f}",
+                    f"{percent(ms2ns(r.sum_dur_ms), self.get_trace_duration()):.1f}%",
+                    bar(percent(ms2ns(r.sum_dur_ms), self.get_trace_duration())),
                 )
-            )
+                for r in res_it
+            ],
+            right=(0, 1, 2),
+        )
 
     def query_proc_names(self) -> None:
         """Query process names and save as upid => name dict, use thread name if no process name
@@ -946,9 +928,9 @@ class PerfettoParser:
             # Process name can be empty in our captured traces, if so we use main thread
             # (prefered) or other threads that has a thread name as proc name
             if row.procname:
-                self._procnames[row.upid] = row.procname[-PROC_NAME_MAX_LEN:]
+                self._procnames[row.upid] = row.procname
             else:
-                self._procnames[row.upid] = row.threadname[-THREAD_NAME_MAX_LEN:]
+                self._procnames[row.upid] = row.threadname
 
         # 2. Some threads even has empty named main thread, use anything thread name as proc name for that case
         res_it = self._tp.query("""
@@ -961,21 +943,14 @@ class PerfettoParser:
 
         for row in res_it:
             if row.upid not in self._procnames:
-                self._procnames[row.upid] = row.threadname[-THREAD_NAME_MAX_LEN:]
-
-        self._procname_len = max(
-            (len(v) for v in self._procnames.values()), default=len("Proc Name")
-        )
-
-        # Add some extra spacing
-        self._procname_len += 3
+                self._procnames[row.upid] = row.threadname
 
     def get_proc_name(self, upid: int) -> str:
         """get proc name from internal _procnames dict"""
         return self._procnames.get(upid, "<unknown>")
 
     def show_trace_duration(self) -> None:
-        print("Trace duration (ms): %d" % (ns2ms(self.get_trace_duration())))
+        text("Trace duration (ms): %d" % (ns2ms(self.get_trace_duration())))
 
     def parse_basic_info(self) -> bool:
         """Read the full trace interval independently of scheduling availability."""
@@ -990,7 +965,7 @@ class PerfettoParser:
                 self._start_ts = int(row.start_ts)
                 self._trace_dur_ns = int(row.end_ts - row.start_ts)
                 return True
-        print("Error: trace has no positive-duration time bounds.")
+        text("Error: trace has no positive-duration time bounds.")
         return False
 
     def get_start_ts(self) -> int:
@@ -1069,7 +1044,7 @@ def main() -> None:
     trace_file = args.file[0]
 
     if not Path(trace_file).is_file():
-        print("Error: %s is not valid file." % (trace_file))
+        text("Error: %s is not valid file." % (trace_file))
         exit(1)
 
     shell = args.parser

@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from perfetto_summary.output import section, table, text
+
 
 def scheduling_rows(
     tp: Any, *, threads: bool = False, pid: int | None = None
@@ -44,19 +46,26 @@ def scheduling_rows(
 
 def show_scheduling_wait(tp: Any, pid: int | None = None) -> None:
     """Print total waiting and distribution of observed runnable intervals."""
-    print("\n------------------------\nScheduling wait (completed R/R+ intervals):")
+    section("Scheduling wait (completed R/R+ intervals)")
     for threads in (False, True):
         rows = scheduling_rows(tp, threads=threads, pid=pid)
-        print("Threads:" if threads else "Processes:")
-        print(
-            f"{'ID':>8} {'Name':<30} {'Wait(ms)':>12} {'Count':>10} {'P95(ms)':>12} {'Max(ms)':>12}"
+        text("Threads:" if threads else "Processes:")
+        table(
+            ("ID", "Name", "Wait(ms)", "Count", "P95(ms)", "Max(ms)"),
+            [
+                (
+                    r.entity_id,
+                    r.name or "",
+                    f"{r.wait_ns / 1e6:.3f}",
+                    r.wait_count,
+                    f"{r.p95_wait_ns / 1e6:.3f}",
+                    f"{r.max_wait_ns / 1e6:.3f}",
+                )
+                for r in rows[:10]
+            ],
+            right=(0, 2, 3, 4, 5),
+            empty="N/A: no positive, completed runnable intervals.",
         )
-        for row in rows[:10]:
-            print(
-                f"{row.entity_id:8} {(row.name or '')[:30]:<30} {row.wait_ns / 1e6:12.3f} {row.wait_count:10} {row.p95_wait_ns / 1e6:12.3f} {row.max_wait_ns / 1e6:12.3f}"
-            )
-        if not rows:
-            print("N/A: no positive, completed runnable intervals.")
-    print(
+    text(
         "P95 uses nearest rank; trace boundaries and missing events can truncate waits."
     )

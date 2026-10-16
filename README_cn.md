@@ -64,6 +64,8 @@ uv run perfetto_summary --remote --parser localhost:9001 capture.perfetto-trace
 
 ## 解读输出
 
+报告使用纯文本表格，数字右对齐，长名称完整换行，不输出颜色或 ANSI 控制序列。可用 `uv run perfetto_summary trace.perfetto-trace > summary.txt` 保存报告；重定向时默认按 120 列排版，必要时扩宽以保持数字单元格完整；输入中的控制字符显示为可见转义文本。进程 CPU 分布单独列出，避免每核一列导致表格过宽。`#` 条形表示对应的样本占比或 trace 时间占比，最多画到 100%；旁边的数值保留实际结果。
+
 - FPS Summary 反映 EGL／合成标记节奏，SurfaceView stat 反映 counter 正向变化节奏；两者都不是直接测量的显示 FPS，帧数不能相加。
 - 最长帧间隔用于定位值得检查的停顿，不等于已确认的 jank。输出时间戳对应间隔的结束位置。
 - 缺少帧或调度事件时，相关指标可能不可用。某个章节没有数据，不表示应用的实际 FPS 为零。
