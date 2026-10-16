@@ -102,6 +102,12 @@ EGL、queueBuffer 和 BufferTX 属于调用或队列相关埋点，新系统也�
 
 ## 频率区间与 slice 重合
 
+### 调度等待分布
+
+`scheduling.py` 从 `thread_state` 中选择非 idle 线程的 `R`、`R+` 且 `dur > 0` 的区间，分别按 `upid`、`utid` 汇总等待总时长、区间数、最长等待及 P95。`R+` 表示被抢占后仍可运行；两类状态都表示 runnable，不能与实际运行时间相加后称为 CPU 时间。进程汇总为各线程等待段的分布，线程并行等待时总量可超过 trace 时长。
+
+P95 使用 nearest-rank 定义：将 n 段等待按时长升序排列，取第 `ceil(0.95 × n)` 项；不是各线程 P95 的平均值。SQL 窗口排序在 processor 内执行，只传回聚合结果。未结束的 `dur=-1`、零时长及睡眠／阻塞状态不参与统计；没有有效区间时显示 `N/A`。即使区间具有正时长，trace 起点或缺失事件仍可能截断等待，因此结果是采样到的等待段分布，并非完整任务生命周期延迟。
+
 ### 运行期间的频率与估算 cycles
 
 `cpu_work.py` 使用官方 `cpu_frequency_counters` 与非 idle、正时长的 sched 区间，按 `ucpu` 做 `SPAN_JOIN`，再按 `upid` 或 `utid` 聚合；PID 仅作筛选，避免 PID 重用导致合并。默认分别展示 CPU 运行时间最多的十个进程和线程，`--pid` 将两类结果限制在指定进程。

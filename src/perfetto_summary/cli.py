@@ -17,6 +17,7 @@ from perfetto.trace_processor import TraceProcessor, TraceProcessorConfig
 
 from perfetto_summary.cpu_capacity import CpuCapacity, cpu_infos
 from perfetto_summary.cpu_work import show_cpu_work
+from perfetto_summary.scheduling import show_scheduling_wait
 
 args: argparse.Namespace
 
@@ -157,6 +158,7 @@ class PerfettoParser:
         if args.pid > 0:
             self.do_cpu_time_per_process(args.pid)
             show_cpu_work(self._tp, pid=args.pid)
+            show_scheduling_wait(self._tp, pid=args.pid)
             return
 
         render_threads = self.do_fps_stat()
@@ -166,6 +168,7 @@ class PerfettoParser:
         self.do_gpu_complete_stat()
         self.do_cpu_time_per_process()
         show_cpu_work(self._tp)
+        show_scheduling_wait(self._tp)
         self.do_cpu_freq_stats()
         self.do_per_cpu_stat()
 
