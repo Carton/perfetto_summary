@@ -68,6 +68,7 @@ uv run perfetto_summary --remote --parser localhost:9001 capture.perfetto-trace
 - 最长帧间隔用于定位值得检查的停顿，不等于已确认的 jank。输出时间戳对应间隔的结束位置。
 - 缺少帧或调度事件时，相关指标可能不可用。某个章节没有数据，不表示应用的实际 FPS 为零。
 - 进程跨多个 CPU 并行时，CPU Time% 可以超过 100%。Capa % 是基于手选 SoC 模型的估算。
+- CPU work estimates 输出繁忙进程和线程运行期间的加权频率、估算 Mcycles 及频率覆盖率。未知频率不补零，cycles 仅覆盖频率已知的运行区间，不代表退休指令数。
 
 公式、数据来源与限制详见[架构与统计口径](docs/architecture.md)。
 

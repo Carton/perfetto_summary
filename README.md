@@ -40,6 +40,7 @@ Host support and the prebuilt version follow the official package manifest. The 
 - Long frame intervals indicate pauses worth inspecting, not confirmed jank. The listed timestamp marks the end of the interval.
 - Missing frame or scheduling events mean the corresponding metric may be unavailable. A blank section does not mean an application's actual FPS is zero.
 - CPU Time% can exceed 100% when a process runs on several cores. Capa % is an estimate based on the manually selected SoC profile.
+- CPU work estimates show runtime-weighted frequency, estimated Mcycles and frequency coverage for the busiest processes and threads. Unknown frequency is excluded; cycles cover only the known-frequency runtime and are not retired instructions.
 
 For formulas, data sources and limitations, see the [architecture and metric definitions](docs/architecture.md).
 
