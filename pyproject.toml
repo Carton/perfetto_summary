@@ -3,7 +3,8 @@ name = "perfetto-summary"
 version = "0.1.0"
 description = "Summarize Android Perfetto traces with frame and CPU statistics"
 readme = "README.md"
-license-files = ["licenses/*"]
+license = "GPL-3.0-only"
+license-files = ["LICENSE", "licenses/*"]
 requires-python = ">=3.12"
 dependencies = [
     "perfetto==0.58.2",
@@ -30,7 +31,7 @@ packages = ["src/perfetto_summary"]
 "THIRD_PARTY_NOTICES.md" = "perfetto_summary/THIRD_PARTY_NOTICES.md"
 
 [tool.hatch.build.targets.sdist]
-include = ["src/", "tests/", "docs/", "README.md", "README_cn.md", "pyproject.toml", "uv.lock", "licenses/", "THIRD_PARTY_NOTICES.md"]
+include = ["src/", "tests/", "docs/", "README.md", "README_cn.md", "pyproject.toml", "uv.lock", "LICENSE", "licenses/", "THIRD_PARTY_NOTICES.md"]
 
 [tool.poe.tasks]
 lint = "ruff check src tests"

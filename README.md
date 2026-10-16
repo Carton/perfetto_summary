@@ -76,3 +76,7 @@ The official `perfetto==0.58.2` package supplies the Python client. Application 
 
 - [Architecture and frame statistics](docs/architecture.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
+
+## License
+
+This project is licensed under [GNU GPL version 3 only (GPL-3.0-only)](LICENSE). Third-party dependencies retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).

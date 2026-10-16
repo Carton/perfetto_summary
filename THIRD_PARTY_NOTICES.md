@@ -17,5 +17,6 @@ A copy of the upstream license and third-party notices remains in
 distribution's `.dist-info/licenses/` directory. Downloaded upstream artifacts
 retain their own license and attribution.
 
-This notice records third-party attribution and does not assign a license to
-this project's original application code.
+This project's original application code is licensed under GPL-3.0-only;
+see [LICENSE](LICENSE). This does not change the licenses of third-party
+dependencies or downloaded artifacts.

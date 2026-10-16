@@ -107,3 +107,7 @@ uv run poe build
 - [架构与帧统计说明](docs/architecture.md)
 - [CPU capacity 参考模型](docs/cpu-capacity.md)
 - [第三方声明](THIRD_PARTY_NOTICES.md)
+
+## 许可证
+
+本项目采用 [GNU GPL 第 3 版（GPL-3.0-only）](LICENSE)。第三方依赖保留各自的许可证，详见[第三方声明](THIRD_PARTY_NOTICES.md)。
