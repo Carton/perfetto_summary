@@ -62,6 +62,15 @@ uv run perfetto_summary --remote --parser localhost:9001 capture.perfetto-trace
 
 `--remote` 未指定地址时默认连接 `localhost:9001`。trace 会发送给指定服务；远端模式不会下载或启动本地 Trace Processor。
 
+## 解读输出
+
+- FPS Summary 反映 EGL／合成标记节奏，SurfaceView stat 反映 counter 正向变化节奏；两者都不是直接测量的显示 FPS，帧数不能相加。
+- 最长帧间隔用于定位值得检查的停顿，不等于已确认的 jank。输出时间戳对应间隔的结束位置。
+- 缺少帧或调度事件时，相关指标可能不可用。某个章节没有数据，不表示应用的实际 FPS 为零。
+- 进程跨多个 CPU 并行时，CPU Time% 可以超过 100%。Capa % 是基于手选 SoC 模型的估算。
+
+公式、数据来源与限制详见[架构与统计口径](docs/architecture.md)。
+
 ## 开发
 
 代码位于 `src/perfetto_summary/`，安装后的命令入口为 `perfetto_summary`。Python 客户端使用官方 `perfetto==0.58.2`，依赖由 `uv.lock` 锁定。

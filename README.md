@@ -34,6 +34,15 @@ uv run perfetto_summary --remote --parser localhost:9001 capture.perfetto-trace
 
 Host support and the prebuilt version follow the official package manifest. The Python package version and binary version can differ; the installed `perfetto==0.58.2` manifest currently selects v57.2. For offline use without an existing cache, or a host without an official prebuilt, supply a compatible binary with `--parser` or use `--remote`.
 
+## Reading the output
+
+- FPS Summary measures EGL/compositor marker cadence; SurfaceView stat measures positive counter changes. Neither is a direct displayed-FPS measurement, and their frame counts must not be added together.
+- Long frame intervals indicate pauses worth inspecting, not confirmed jank. The listed timestamp marks the end of the interval.
+- Missing frame or scheduling events mean the corresponding metric may be unavailable. A blank section does not mean an application's actual FPS is zero.
+- CPU Time% can exceed 100% when a process runs on several cores. Capa % is an estimate based on the manually selected SoC profile.
+
+For formulas, data sources and limitations, see the [architecture and metric definitions](docs/architecture.md).
+
 ## Development
 
 ```sh
