@@ -29,11 +29,29 @@ sm8750_freqs = (3530000, 3530000, 3530000, 3530000, 3530000, 3530000, 4320000, 4
 sm8850_caps = (1792, 1792, 1792, 1792, 1792, 1792, 1894, 1894)
 sm8850_freqs = (3620000, 3620000, 3620000, 3620000, 3620000, 3620000, 4600000, 4600000)
 
+# Fixed vendor DTS references with nominal standard-SKU frequencies.
+mt6895_caps = (380, 380, 380, 380, 1024, 1024, 1024, 1024)
+mt6895_freqs = (2000000, 2000000, 2000000, 2000000, 2850000, 2850000, 2850000, 2850000)
+mt6897_caps = (338, 338, 338, 338, 1080, 1080, 1080, 1024)
+mt6897_freqs = (2200000, 2200000, 2200000, 2200000, 3200000, 3200000, 3200000, 3350000)
+mt6989_caps = (766, 766, 766, 766, 958, 958, 958, 1024)
+mt6989_freqs = (2000000, 2000000, 2000000, 2000000, 2850000, 2850000, 2850000, 3250000)
+mt6991_caps = (714, 714, 714, 714, 1024, 1024, 1024, 937)
+mt6991_freqs = (2400000, 2400000, 2400000, 2400000, 3300000, 3300000, 3300000, 3626000)
+
+# Observed scheduler capacities, already frequency-normalized; see the device
+# snapshot and limitations in docs/cpu-capacity.md.
+mt6899_caps = (697, 697, 697, 697, 929, 929, 929, 1024)
+mt6899_freqs = (2100000, 2100000, 2100000, 2100000, 3000000, 3000000, 3000000, 3250000)
+
 
 class CpuInfo:
-    def __init__(self, caps: tuple[int, ...], freqs: tuple[int, ...]) -> None:
+    def __init__(
+        self, caps: tuple[int, ...], freqs: tuple[int, ...], *, normalized: bool = False
+    ) -> None:
         self.caps = caps
         self.freqs = freqs
+        self.normalized = normalized
 
 
 cpu_infos = {
@@ -45,6 +63,11 @@ cpu_infos = {
     "sm8650": CpuInfo(sm8650_caps, sm8650_freqs),
     "sm8750": CpuInfo(sm8750_caps, sm8750_freqs),
     "sm8850": CpuInfo(sm8850_caps, sm8850_freqs),
+    "mt6895": CpuInfo(mt6895_caps, mt6895_freqs),
+    "mt6897": CpuInfo(mt6897_caps, mt6897_freqs),
+    "mt6899": CpuInfo(mt6899_caps, mt6899_freqs, normalized=True),
+    "mt6989": CpuInfo(mt6989_caps, mt6989_freqs),
+    "mt6991": CpuInfo(mt6991_caps, mt6991_freqs),
 }
 
 
@@ -56,14 +79,16 @@ class CpuCapacity:
     def __init__(self, cpu_type: str) -> None:
         self.cpu_info = cpu_infos[cpu_type]
 
-        self._max_total_cap = 0
-        for cap, freq in zip(self.cpu_info.caps, self.cpu_info.freqs):
-            self._max_total_cap += cap * freq
+        self._max_total_cap = sum(
+            self.max_cap(cpu) for cpu in range(len(self.cpu_info.caps))
+        )
 
     """ Returns maximum capacity for specified cpu id.
     @cpu_id: cpu id. typically range from 0~7"""
 
     def max_cap(self, cpu_id: int) -> int:
+        if self.cpu_info.normalized:
+            return self.cpu_info.caps[cpu_id]
         return self.cpu_info.caps[cpu_id] * self.cpu_info.freqs[cpu_id]
 
     def max_total_cap(self) -> int:

@@ -77,6 +77,8 @@ uv run perfetto_summary --remote --parser localhost:9001 capture.perfetto-trace
 
 公式、数据来源与限制详见[架构与统计口径](docs/architecture.md)。
 
+MediaTek capacity 配置包括 `mt6895`（D8100）、`mt6897`（D8300）、`mt6899`（D8400）、`mt6989`（D9300）、`mt6991`（D9400）；来源与实机快照限制见 [capacity 文档](docs/cpu-capacity.md)，兼容性结果见 [MTK 实采验证](docs/validation.md)。
+
 ## 开发
 
 代码位于 `src/perfetto_summary/`，安装后的命令入口为 `perfetto_summary`。Python 客户端使用官方 `perfetto==0.58.2`，依赖由 `uv.lock` 锁定。

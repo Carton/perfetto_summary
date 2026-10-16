@@ -250,6 +250,26 @@ class SummaryTests(unittest.TestCase):
         self.assertNotIn("CPU7=", self.output.getvalue())
         self.assertIn("N/A", self.output.getvalue())
 
+    def test_normalized_capacity_in_process_output(self):
+        self.tp.db.executescript("""
+            CREATE TABLE sched(utid INTEGER, cpu INTEGER, dur INTEGER);
+            INSERT INTO sched VALUES(1, 0, 10000000), (1, 7, 10000000);
+        """)
+        self.parser._trace_dur_ns = 10000000
+        with (
+            patch.object(
+                cli,
+                "args",
+                SimpleNamespace(cpu_type="mt6899", procs_num=1),
+                create=True,
+            ),
+            contextlib.redirect_stdout(self.output),
+        ):
+            self.parser.do_cpu_time_per_process(10)
+        # Two fully busy cores contribute (697 + 1024) / 6599 of the device.
+        self.assertIn("26.080", self.output.getvalue())
+        self.assertIn("200.0%", self.output.getvalue())
+
     def test_nonpositive_trace_bounds_are_rejected(self):
         for start, end in [(0, 0), (20, 10), (None, None)]:
             with self.subTest(start=start, end=end):

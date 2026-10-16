@@ -57,7 +57,17 @@ class CliTests(unittest.TestCase):
         )
 
     def test_recent_cpu_profiles_are_accepted(self) -> None:
-        for cpu_type in ("sm8550", "sm8650", "sm8750", "sm8850"):
+        for cpu_type in (
+            "sm8550",
+            "sm8650",
+            "sm8750",
+            "sm8850",
+            "mt6895",
+            "mt6897",
+            "mt6899",
+            "mt6989",
+            "mt6991",
+        ):
             with self.subTest(cpu_type=cpu_type):
                 self.run_cli("--cputype", cpu_type)
                 self.assertEqual(cli.args.cpu_type, cpu_type)

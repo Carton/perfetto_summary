@@ -49,6 +49,8 @@ The report uses plain text tables with complete names, right-aligned numbers and
 
 For formulas, data sources and limitations, see the [architecture and metric definitions](docs/architecture.md).
 
+MediaTek capacity references are available as `mt6895` (D8100), `mt6897` (D8300), `mt6899` (D8400), `mt6989` (D9300) and `mt6991` (D9400). See the [capacity sources and device-snapshot limits](docs/cpu-capacity.md) and [MTK trace validation](docs/validation.md).
+
 ## Development
 
 ```sh

@@ -100,7 +100,7 @@ Late 与 Dropped 分别来自 `present_type` 的 Late Present／Dropped Frame；
 | 进程/线程 CPU 时间 | 汇总 sched 的 dur；CPU Time% 以全局观察时长为分母，跨核并行时可超过 100% |
 | 进程 CPU N % | 指定 CPU 的运行时间 / 进程总运行时间 |
 | CPU 频率 | 复用官方 `linux.cpu.frequency` 的 `cpu_frequency_counters`，按 CPU 与频点汇总正时长区间；占比以全局观察时长为分母 |
-| Capa % | 对 CPU 运行时间按选定 SoC 的 capacity × 参考最高频率加权，模型定义见 [CPU capacity 文档](cpu-capacity.md) |
+| Capa % | 对 CPU 运行时间按选定模型的每核静态权重加权；每 MHz 值乘参考最高频率，已归一化的调度器值直接使用，模型定义见 [CPU capacity 文档](cpu-capacity.md) |
 
 缺失调度样本时相关值为零，不能区分“没有运行”和“没有采集”。GPU 等待时长不等于完整 GPU 执行时长；累计 counter 或状态 counter 的求和也不等于丢帧次数。
 
