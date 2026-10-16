@@ -131,6 +131,12 @@ slice 的重合应按指标处理：
 
 CPU 时间列按 sched 中实际出现的 CPU ID 生成，频率统计覆盖所有有 cpufreq 数据的 CPU。静态 capacity 模型若不能覆盖观察到的 CPU ID，则输出 `N/A`；模型与设备是否匹配仍需人工核实。
 
+### CPU idle 驻留与退出
+
+复用官方 `linux.cpu.idle` 的 `cpu_idle_counters`，按 CPU、track 与状态编号累计驻留时间。`-1` 为 active，其余编号由设备定义，不能跨平台直接当作相同的 C-state。驻留占比与覆盖率均以全局 trace 时长为分母；首样本前不回填，末状态延续到 trace 结束。active 状态不代表该 CPU 全程执行任务。
+
+按每条 track 的 `(ts, id)` 识别从非负 idle 状态到 active 的退出，包括同时间戳和末端零时长转换；零时长不增加驻留时间。初始 active 没有前驱时不计退出。这里只统计观测到的 CPU 状态转换，不能推导进程唤醒次数或唤醒责任。缺少 idle 数据时显示 `N/A`；系统级 idle 统计不进入 `--pid` 路径。
+
 ## 数据边界
 
 - 同一进程多 surface 的标记仍需 layer/frame 身份才能关联，时间接近并不能证明是同一帧。

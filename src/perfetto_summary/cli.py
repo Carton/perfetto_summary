@@ -3,8 +3,6 @@
 # Use Perfetto to parse systrace file and do analysis
 # Note: The Perfetto python lib is based on python3
 #
-# TODO:
-# - c-state etc. statistics for each CPU
 
 import argparse
 import logging
@@ -16,6 +14,7 @@ from typing import Any, Self
 from perfetto.trace_processor import TraceProcessor, TraceProcessorConfig
 
 from perfetto_summary.cpu_capacity import CpuCapacity, cpu_infos
+from perfetto_summary.cpu_idle import show_cpu_idle
 from perfetto_summary.cpu_work import show_cpu_work
 from perfetto_summary.scheduling import show_scheduling_wait
 
@@ -170,6 +169,7 @@ class PerfettoParser:
         show_cpu_work(self._tp)
         show_scheduling_wait(self._tp)
         self.do_cpu_freq_stats()
+        show_cpu_idle(self._tp)
         self.do_per_cpu_stat()
 
     def do_fps_stat(self) -> list[ThreadInfo]:

@@ -68,6 +68,7 @@ uv run perfetto_summary --remote --parser localhost:9001 capture.perfetto-trace
 - 最长帧间隔用于定位值得检查的停顿，不等于已确认的 jank。输出时间戳对应间隔的结束位置。
 - 缺少帧或调度事件时，相关指标可能不可用。某个章节没有数据，不表示应用的实际 FPS 为零。
 - 进程跨多个 CPU 并行时，CPU Time% 可以超过 100%。Capa % 是基于手选 SoC 模型的估算。
+- CPU idle residency 输出逐 CPU 状态驻留、采集覆盖率与观测到的 idle 退出次数。状态编号依设备而定，退出次数不等于进程唤醒次数；需采集 `power/cpu_idle`。
 - CPU work estimates 输出繁忙进程和线程运行期间的加权频率、估算 Mcycles 及频率覆盖率。未知频率不补零，cycles 仅覆盖频率已知的运行区间，不代表退休指令数。
 - Scheduling wait 输出繁忙进程和线程的 Runnable 等待总时长、段数、P95 和最长等待。它反映等待 CPU 的时间；采集缺失或边界截断会影响结果。
 
