@@ -21,6 +21,7 @@ class SqlProcessor:
             CREATE TABLE slice(id INTEGER PRIMARY KEY, track_id INTEGER, ts INTEGER, name TEXT, parent_id INTEGER, dur INTEGER DEFAULT 0);
             CREATE TABLE process_counter_track(id INTEGER, name TEXT, upid INTEGER);
             CREATE TABLE counter(id INTEGER PRIMARY KEY, track_id INTEGER, ts INTEGER, value INTEGER);
+            CREATE TABLE thread_state(utid INTEGER, ts INTEGER, dur INTEGER, state TEXT, io_wait INTEGER);
             INSERT INTO process VALUES(1, 10);
             INSERT INTO thread VALUES(1, 1, 10, 'RenderThread');
             INSERT INTO thread_track VALUES(1, 1);
@@ -85,9 +86,6 @@ class SummaryTests(unittest.TestCase):
                 self.assertIn(expected, self.output.getvalue())
 
     def test_missing_process_names_and_schedule_samples(self):
-        self.tp.db.execute(
-            "CREATE TABLE thread_state(utid INTEGER, dur INTEGER, state TEXT, io_wait INTEGER)"
-        )
         self.tp.db.execute("ALTER TABLE thread ADD COLUMN is_main_thread INTEGER")
         self.tp.db.execute("ALTER TABLE process ADD COLUMN name TEXT")
         self.tp.db.execute("DELETE FROM thread")

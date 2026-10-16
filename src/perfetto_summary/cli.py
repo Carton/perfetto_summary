@@ -16,6 +16,10 @@ from perfetto.trace_processor import TraceProcessor, TraceProcessorConfig
 from perfetto_summary.cpu_capacity import CpuCapacity, cpu_infos
 from perfetto_summary.cpu_idle import show_cpu_idle
 from perfetto_summary.cpu_work import show_cpu_work
+from perfetto_summary.frame_intervals import (
+    show_interval_details,
+    show_interval_percentiles,
+)
 from perfetto_summary.frame_timeline import show_frame_timeline
 from perfetto_summary.output import bar, section, table, text
 from perfetto_summary.scheduling import show_scheduling_wait
@@ -350,6 +354,8 @@ class PerfettoParser:
                 right=(0, 2, 3, 4),
             )
 
+            show_interval_details(self._tp, thread.utid, self.get_start_ts())
+
     def do_surfaceview_stat(self, threads: list[ThreadInfo]) -> None:
         """Do manual histogram on those 'BufferTX - SurfaceView[XXX]' counters.
         Sometimes eglSwapBuffers etc. binder calls are missing in trace file and we have to use
@@ -443,6 +449,10 @@ class PerfettoParser:
                 right=(0, 1, 2),
             )
 
+            show_interval_percentiles(self._tp, surfaceview=True)
+            text(
+                "State breakdown N/A: this counter is not linked to a rendering thread."
+            )
             sv_num += 1
 
     def do_cpu_freq_stats(self) -> None:

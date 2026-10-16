@@ -63,6 +63,8 @@ FPS>20 且同一 track 不含 `postFramebuffer%` 的条目进入主要渲染线�
 
 最长十个间隔用于定位较长停顿。输出时间戳对应间隔结束的标记，分析区间是该标记与其前一个标记之间。固定区间不按刷新率或 deadline 分类，不能据此直接认定 jank。
 
+间隔 P95/P99 使用 nearest-rank：对与直方图相同的非负间隔排序，取第 `ceil(p × N)` 项，保留零间隔；无样本时输出 N/A。最长十个正间隔以 `[前一标记起点, 当前标记起点)` 为窗口，仅查询对应 utid 的 thread_state，并将状态裁剪到窗口。Running、Runnable（R/R+）、Sleeping（S）、Blocked（D 开头）、Other、Unknown 和 Overlap 构成互斥时间分区；缺少状态和未覆盖时间计为 Unknown，多条状态同时有效的时间计为 Overlap，不重复累加。未结束状态 `dur=-1` 延续到窗口终点。该分解描述记录中的线程状态，不能仅凭 Sleeping 判断锁、帧率控制或生产者等待等具体原因。
+
 ### SurfaceView counter 间隔
 
 每条匹配 track 独立计算：
@@ -74,6 +76,8 @@ FPS>20 且同一 track 不含 `postFramebuffer%` 的条目进入主要渲染线�
 `Count` 是间隔数。一次跳增大于 1 仍只算一个正向变化事件；下降、重置和持平不计。少于两个事件或平均间隔不大于零时输出 FPS=0。
 
 所有匹配的 SurfaceView counter 都会参与，与 EGL 统计并列输出，不依据主要渲染线程过滤或自动回退。如果 counter 表示队列深度，其正向变化不能直接等同于 queueBuffer 调用数或显示帧数，需核实设备埋点定义。它与 EGL 结果不能相加。
+
+SurfaceView counter 间隔同样输出 nearest-rank P95/P99。counter 未与渲染线程关联，因此不输出推测的线程状态分解。
 
 ## FrameTimeline 与呈现指标
 
