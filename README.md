@@ -40,6 +40,7 @@ Host support and the prebuilt version follow the official package manifest. The 
 - Long frame intervals indicate pauses worth inspecting, not confirmed jank. The listed timestamp marks the end of the interval.
 - Missing frame or scheduling events mean the corresponding metric may be unavailable. A blank section does not mean an application's actual FPS is zero.
 - CPU Time% can exceed 100% when a process runs on several cores. Capa % is an estimate based on the manually selected SoC profile.
+- FrameTimeline outcomes report completed app frames per process/layer, native jank tags, late/dropped counts and incomplete records. Requires Android 12+ and `android.surfaceflinger.frametimeline`. SF timeline records are separate; app completion is not screen presentation. `--pid` also filters this section.
 - CPU idle residency shows per-CPU state durations, trace coverage and observed idle exits. State indices are device-specific; exits are CPU transitions, not process wakeups. Requires `power/cpu_idle`.
 - CPU work estimates show runtime-weighted frequency, estimated Mcycles and frequency coverage for the busiest processes and threads. Unknown frequency is excluded; cycles cover only the known-frequency runtime and are not retired instructions.
 - Scheduling wait reports total runnable time, interval count, nearest-rank P95 and maximum wait for the busiest processes and threads. It measures waiting for CPU, not execution time; missing or truncated intervals affect the result.

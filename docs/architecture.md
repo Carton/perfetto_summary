@@ -20,7 +20,7 @@ CLI 参数与 trace 文件
 | 官方 `perfetto` 客户端 | 管理本地程序的获取与生命周期，或连接远端；通过 protobuf HTTP RPC 装载 trace、查询数据 |
 | `cpu_capacity.py` | 提供手选 SoC 的静态相对能力模型，详见 [CPU capacity 定义](cpu-capacity.md) |
 
-普通分析路径依次输出帧节奏、调度状态、FrameMissed、VSYNC、GPU 等待、进程与线程 CPU 时间、CPU 频率和逐 CPU 统计。指定 PID 时仅执行该进程的 CPU 分析。
+普通分析路径依次输出帧节奏、调度状态、FrameMissed、VSYNC、GPU 等待、进程与线程 CPU 时间、CPU 频率和逐 CPU 统计。指定 PID 时执行该进程的 CPU、调度等待与 FrameTimeline 分析。
 
 ## 时间与身份基准
 
@@ -83,7 +83,11 @@ EGL、queueBuffer 和 BufferTX 属于调用或队列相关埋点，新系统也�
 | `actual_frame_timeline_slice` | 实际帧时间及 `present_type`、`jank_type` 等信息 | 可区分丢弃、迟到等结果；应用侧的 slice 结束也不能一概当作屏幕呈现时刻 |
 | layer、surface/display frame token | 区分 surface 并建立帧间关联 | 一个进程可更新多个 layer，多个 surface 帧可合成为一个 display 帧 |
 
-本工具的 FPS Summary 采用提交标记口径，尚未查询上述 FrameTimeline 表。显示 FPS、应用提交 FPS 和 jank 比例属于不同指标：引入 FrameTimeline 汇总时，应明确选定的进程／layer、app 或 display 帧、统计窗口、丢弃帧处理和去重规则，不能把多个 surface 的帧数直接相加。采集缺失或渲染路径不受支持时，应报告指标不可用。
+FPS Summary 保持提交标记口径。FrameTimeline outcomes 独立读取 `actual_frame_timeline_slice`，按 `upid` 和 layer 分组，以全局 trace 为观察窗口，并支持 `--pid`。应用帧仅在 upid、layer 和正数 surface token 齐全时去重；优先保留完整记录，再选最大 slice.id。缺少身份的记录保留独立 slice 身份，并报告 Unkeyed；不依据时间接近合并。SF 记录单列，因为缺少明确 display 身份，不跨记录按 display token 去重，也不据此计算全局显示 FPS。
+
+`dur >= 0` 的去重后记录构成 Complete；`dur < 0` 的原始记录计入 Incomplete，排除在结果分母之外；Duplicate 是移除的应用重复记录数，两者可重叠。Tagged jank 只计官方 `jank_tag` 的 Self Jank／Other Jank；分母为具备已识别标签的完整记录，SurfaceFlinger Stuffing 和 Non-perceivable Jank 计入已知分母、不计 Self／Other 分子；未识别或缺失的标签单列 Unknown。Buffer Stuffing 反映排队高延迟状态，单独存在时不计 Tagged jank。原始 `jank_type` 组合和 `present_type` 按组合计数展示，不把一帧的多个原因重复计为多帧。
+
+Late 与 Dropped 分别来自 `present_type` 的 Late Present／Dropped Frame；它们与 jank 分类可重叠，不能相加。完整记录并不保证预测有效或采集无丢失。本工具不把应用 slice 结束当作屏幕呈现，也不自动关联 EGL／SurfaceView；采集缺失或渲染路径不受支持时输出不可用。数据源与字段定义以[官方文档](https://perfetto.dev/docs/data-sources/frametimeline)为准。
 
 ## 调度、GPU 与 CPU 指标
 
