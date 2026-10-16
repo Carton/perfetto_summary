@@ -1,5 +1,7 @@
 # Perfetto Summary
 
+[中文说明](README_cn.md)
+
 A small command-line tool for summarizing Android Perfetto traces: EGL submission cadence, SurfaceView counters, scheduling states, GPU waits, and CPU usage/frequency statistics.
 
 Frame statistics describe the available trace markers, not necessarily displayed FPS. See the [architecture and measurement definitions](docs/architecture.md) before interpreting results.

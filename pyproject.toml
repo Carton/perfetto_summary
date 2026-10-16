@@ -27,7 +27,7 @@ packages = ["src/perfetto_summary"]
 "THIRD_PARTY_NOTICES.md" = "perfetto_summary/THIRD_PARTY_NOTICES.md"
 
 [tool.hatch.build.targets.sdist]
-include = ["src/", "tests/", "docs/", "README.md", "pyproject.toml", "uv.lock", "licenses/", "THIRD_PARTY_NOTICES.md"]
+include = ["src/", "tests/", "docs/", "README.md", "README_cn.md", "pyproject.toml", "uv.lock", "licenses/", "THIRD_PARTY_NOTICES.md"]
 
 [tool.poe.tasks]
 lint = "ruff check src tests"
