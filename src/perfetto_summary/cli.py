@@ -19,6 +19,7 @@ from perfetto_summary.cpu_work import show_cpu_work
 from perfetto_summary.frame_timeline import show_frame_timeline
 from perfetto_summary.output import bar, section, table, text
 from perfetto_summary.scheduling import show_scheduling_wait
+from perfetto_summary.trace_health import show_trace_health
 
 args: argparse.Namespace
 
@@ -142,6 +143,7 @@ class PerfettoParser:
         # Show basic info first
         self.query_proc_names()
         self.show_trace_duration()
+        show_trace_health(self._tp)
 
         # If use specify a pid to check in detail, only focus on that process
         if args.pid > 0:

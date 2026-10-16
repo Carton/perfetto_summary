@@ -24,6 +24,8 @@ CLI 参数与 trace 文件
 
 ## 时间与身份基准
 
+报告首先输出整个 trace 的采集健康摘要，包括实际处理器版本、调度与 FrameTimeline 等数据量、正数 error/data_loss 计数，以及每个 CPU 的频点和 idle 时长覆盖率。覆盖率以全局观察时长为分母，保留缺失值；超过 100% 的值不截断，以暴露重叠区间。idle track 按 CPU 编号与 machine identity 关联，避免合并不同机器的同编号 CPU。活跃非 idle 进程缺少名称或 PID 超出 Linux 范围时单列身份警告，不修改解析结果。没有错误计数不代表采集完整，没有记录也不能证明数据源未启用；指定 PID 时健康摘要仍描述全局输入。
+
 内部时间单位为 ns；输出转换为 ms 或 s。全局起止时间使用 Trace Processor 的 `trace_start()`、`trace_end()`，全局观察时长为两者之差；仅拒绝没有正时长边界的输入。没有 sched 的 trace 仍可分析其已有的 slice 和 counter，调度相关章节则没有数据。
 
 进程和线程分别通过 Perfetto 的 `upid`、`utid` 标识，用户可见的 PID/TID 仅用于展示。FPS 摘要按线程 track 分组；SurfaceView 统计按 counter track 分组。
